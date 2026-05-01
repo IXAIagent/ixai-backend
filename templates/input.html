@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IXAIagent｜新增資產</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-slate-950 text-white">
+  <div class="max-w-6xl mx-auto p-6 md:p-10">
+    <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+      <div>
+        <p class="text-sm text-slate-400">IXAIagent</p>
+        <h1 class="text-3xl md:text-4xl font-bold tracking-tight">新增投資資產</h1>
+        <p class="text-slate-400 mt-2">輸入自己的股票與虛擬貨幣部位，讓系統自動監控風險。</p>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <a href="/app" class="rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm hover:bg-slate-800">
+          回 Dashboard
+        </a>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
+      <!-- 股票 -->
+      <div class="rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-xl font-semibold">新增股票部位</h2>
+            <p class="text-sm text-slate-400 mt-1">可先輸入台股或美股，後續再擴充更多欄位。</p>
+          </div>
+          <div class="rounded-full bg-sky-500/15 text-sky-300 px-3 py-1 text-xs">
+            STOCK
+          </div>
+        </div>
+
+        <form id="stockForm" class="mt-6 space-y-4">
+          <div>
+            <label class="block text-sm text-slate-300 mb-2">股票代號</label>
+            <input
+              id="stockSymbol"
+              type="text"
+              placeholder="例如 AAPL 或 2330"
+              class="w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 outline-none focus:border-sky-500"
+            />
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm text-slate-300 mb-2">股數</label>
+              <input
+                id="stockQuantity"
+                type="number"
+                step="0.01"
+                placeholder="例如 10"
+                class="w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 outline-none focus:border-sky-500"
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm text-slate-300 mb-2">平均成本</label>
+              <input
+                id="stockAvgCost"
+                type="number"
+                step="0.01"
+                placeholder="例如 200"
+                class="w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 outline-none focus:border-sky-500"
+              />
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            class="w-full rounded-2xl bg-sky-500 px-4 py-3 font-semibold text-slate-950 hover:bg-sky-400"
+          >
+            新增股票
+          </button>
+        </form>
+      </div>
+
+      <!-- Crypto -->
+      <div class="rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-xl font-semibold">新增 Crypto 部位</h2>
+            <p class="text-sm text-slate-400 mt-1">可輸入現貨或槓桿部位，後續再擴充 Grid / FCN。</p>
+          </div>
+          <div class="rounded-full bg-violet-500/15 text-violet-300 px-3 py-1 text-xs">
+            CRYPTO
+          </div>
+        </div>
+
+        <form id="cryptoForm" class="mt-6 space-y-4">
+          <div>
+            <label class="block text-sm text-slate-300 mb-2">幣種代號</label>
+            <input
+              id="cryptoSymbol"
+              type="text"
+              placeholder="例如 BTC 或 ETH"
+              class="w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 outline-none focus:border-violet-500"
+            />
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm text-slate-300 mb-2">數量</label>
+              <input
+                id="cryptoQuantity"
+                type="number"
+                step="0.0001"
+                placeholder="例如 0.01"
+                class="w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 outline-none focus:border-violet-500"
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm text-slate-300 mb-2">價格</label>
+              <input
+                id="cryptoPrice"
+                type="number"
+                step="0.01"
+                placeholder="例如 70000"
+                class="w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 outline-none focus:border-violet-500"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-sm text-slate-300 mb-2">槓桿</label>
+            <input
+              id="cryptoLeverage"
+              type="number"
+              step="0.1"
+              value="1"
+              class="w-full rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 outline-none focus:border-violet-500"
+            />
+          </div>
+
+          <button
+            type="submit"
+            class="w-full rounded-2xl bg-violet-500 px-4 py-3 font-semibold text-white hover:bg-violet-400"
+          >
+            新增 Crypto
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-8">
+      <div class="lg:col-span-2 rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
+        <h2 class="text-xl font-semibold">操作結果</h2>
+        <div id="resultBox" class="mt-4 rounded-2xl border border-slate-800 bg-slate-950 p-4 text-slate-300">
+          請先輸入一筆資產，成功後可直接跳回 Dashboard 檢視。
+        </div>
+      </div>
+
+      <div class="rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
+        <h2 class="text-xl font-semibold">使用流程</h2>
+        <div class="mt-4 space-y-3 text-sm text-slate-300">
+          <div class="rounded-2xl border border-slate-800 bg-slate-950 p-4">1. 輸入你的資產部位</div>
+          <div class="rounded-2xl border border-slate-800 bg-slate-950 p-4">2. 系統寫入資料庫</div>
+          <div class="rounded-2xl border border-slate-800 bg-slate-950 p-4">3. Dashboard 自動反映</div>
+          <div class="rounded-2xl border border-slate-800 bg-slate-950 p-4">4. Risk Engine 開始監控</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const resultBox = document.getElementById("resultBox");
+
+    function setResult(message, ok = true) {
+      resultBox.className = ok
+        ? "mt-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-emerald-300"
+        : "mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-red-300";
+      resultBox.textContent = message;
+    }
+
+    async function handleStockSubmit(event) {
+      event.preventDefault();
+
+      const symbol = document.getElementById("stockSymbol").value.trim();
+      const quantity = document.getElementById("stockQuantity").value.trim();
+      const avgCost = document.getElementById("stockAvgCost").value.trim();
+
+      if (!symbol || !quantity || !avgCost) {
+        setResult("股票資料未填完整。", false);
+        return;
+      }
+
+      try {
+        const url = `/api/v1/portfolio/stock?symbol=${encodeURIComponent(symbol)}&quantity=${encodeURIComponent(quantity)}&avg_cost=${encodeURIComponent(avgCost)}`;
+        const response = await fetch(url, { method: "POST" });
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(text || `HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        setResult(`股票新增成功：${data.message}`);
+
+        setTimeout(() => {
+          window.location.href = "/app";
+        }, 1000);
+      } catch (error) {
+        setResult(`股票新增失敗：${error}`, false);
+      }
+    }
+
+    async function handleCryptoSubmit(event) {
+      event.preventDefault();
+
+      const symbol = document.getElementById("cryptoSymbol").value.trim();
+      const quantity = document.getElementById("cryptoQuantity").value.trim();
+      const price = document.getElementById("cryptoPrice").value.trim();
+      const leverage = document.getElementById("cryptoLeverage").value.trim() || "1";
+
+      if (!symbol || !quantity || !price) {
+        setResult("Crypto 資料未填完整。", false);
+        return;
+      }
+
+      try {
+        const url = `/api/v1/portfolio/crypto?symbol=${encodeURIComponent(symbol)}&quantity=${encodeURIComponent(quantity)}&price=${encodeURIComponent(price)}&leverage=${encodeURIComponent(leverage)}`;
+        const response = await fetch(url, { method: "POST" });
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(text || `HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        setResult(`Crypto 新增成功：${data.message}`);
+
+        setTimeout(() => {
+          window.location.href = "/app";
+        }, 1000);
+      } catch (error) {
+        setResult(`Crypto 新增失敗：${error}`, false);
+      }
+    }
+
+    document.getElementById("stockForm").addEventListener("submit", handleStockSubmit);
+    document.getElementById("cryptoForm").addEventListener("submit", handleCryptoSubmit);
+  </script>
+</body>
+</html>

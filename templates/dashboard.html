@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IXAI Agent Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="min-h-screen bg-[#07111f] text-slate-100">
+  <div class="min-h-screen lg:flex">
+
+    <!-- Sidebar -->
+    <aside class="hidden lg:flex lg:w-72 lg:flex-col border-r border-slate-800 bg-slate-950/70">
+      <div class="p-6 border-b border-slate-800">
+        <div class="text-xs tracking-[0.35em] text-cyan-300 font-bold">IXAI AGENT</div>
+        <div class="text-2xl font-black mt-2">一玄 AI</div>
+        <div class="text-sm text-slate-400 mt-1">Investment Monitor</div>
+      </div>
+
+      <nav class="p-4 space-y-2 text-sm">
+        <div class="px-4 py-3 rounded-2xl bg-cyan-500/15 text-cyan-200 border border-cyan-400/20 font-bold">Dashboard</div>
+        <div class="px-4 py-3 rounded-2xl text-slate-400">Portfolio</div>
+        <div class="px-4 py-3 rounded-2xl text-slate-400">Risk Engine</div>
+        <div class="px-4 py-3 rounded-2xl text-slate-400">Alerts</div>
+      </nav>
+
+      <div class="mt-auto p-4">
+        <div class="rounded-3xl border border-slate-800 bg-slate-900 p-4">
+          <div class="text-sm font-bold">系統狀態</div>
+          <div id="systemStatus" class="text-xs text-emerald-300 mt-2">等待登入</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="flex-1">
+      <div class="max-w-7xl mx-auto px-4 md:px-8 py-6">
+
+        <!-- Header -->
+        <header class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+          <div>
+            <div class="text-xs md:hidden text-cyan-300 tracking-[0.3em] font-bold">IXAI AGENT</div>
+            <h1 class="text-3xl md:text-4xl font-black mt-1">投資監控儀表板</h1>
+            <p id="subtitle" class="text-slate-400 mt-2">多使用者隔離版｜資產監控｜AI 風險提示</p>
+          </div>
+
+          <div class="flex gap-2">
+            <button onclick="loadDashboard()" class="px-4 py-2 rounded-2xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-black">
+              重新整理
+            </button>
+            <button onclick="logout()" class="px-4 py-2 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-700 font-bold">
+              登出
+            </button>
+          </div>
+        </header>
+
+        <!-- Auth -->
+        <section id="authPanel" class="grid lg:grid-cols-2 gap-5 mb-6">
+          <div class="rounded-[2rem] bg-slate-900/80 border border-slate-800 p-6 shadow-2xl">
+            <h2 class="text-2xl font-black mb-2">登入 Dashboard</h2>
+            <p class="text-slate-400 text-sm mb-5">登入後只會看到自己的 portfolio 與資產資料。</p>
+
+            <div class="space-y-3">
+              <input id="loginEmail" class="w-full rounded-2xl bg-slate-950 border border-slate-700 px-4 py-3 outline-none focus:border-cyan-400" placeholder="Email" />
+              <input id="loginPassword" type="password" class="w-full rounded-2xl bg-slate-950 border border-slate-700 px-4 py-3 outline-none focus:border-cyan-400" placeholder="Password" />
+              <button onclick="login()" class="w-full rounded-2xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 px-4 py-3 font-black">
+                登入
+              </button>
+            </div>
+          </div>
+
+          <div class="rounded-[2rem] bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800 p-6 shadow-2xl">
+            <h2 class="text-2xl font-black mb-2">快速註冊測試帳號</h2>
+            <p class="text-slate-400 text-sm mb-5">可用來測 user1 / user2 資料隔離。</p>
+
+            <div class="space-y-3">
+              <input id="registerEmail" class="w-full rounded-2xl bg-slate-950 border border-slate-700 px-4 py-3 outline-none focus:border-cyan-400" placeholder="Email" />
+              <input id="registerPassword" type="password" class="w-full rounded-2xl bg-slate-950 border border-slate-700 px-4 py-3 outline-none focus:border-cyan-400" placeholder="Password" />
+              <button onclick="registerUser()" class="w-full rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 px-4 py-3 font-black">
+                註冊
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- App -->
+        <section id="appPanel" class="hidden space-y-6">
+
+          <!-- Top Cards -->
+          <div class="grid xl:grid-cols-5 gap-4">
+            <div class="xl:col-span-2 rounded-[2rem] bg-gradient-to-br from-cyan-400 via-blue-500 to-indigo-600 p-6 shadow-2xl shadow-cyan-500/10 text-slate-950">
+              <div class="text-sm font-black opacity-75">Portfolio Value</div>
+              <div id="totalValue" class="text-4xl md:text-5xl font-black mt-3">--</div>
+              <div id="portfolioName" class="text-sm font-bold mt-3 opacity-80 truncate">--</div>
+            </div>
+
+            <div class="rounded-[2rem] bg-slate-900 border border-slate-800 p-6 shadow-xl">
+              <div class="text-xs text-slate-400">風險等級</div>
+              <div id="risk-level" class="text-4xl font-black mt-3">--</div>
+              <div class="text-xs text-slate-400 mt-5">摘要</div>
+              <div id="risk-alert" class="text-sm mt-2 text-slate-300 leading-relaxed"></div>
+              <div class="text-xs text-slate-400 mt-5">原因</div>
+              <div id="risk-reasons" class="text-sm mt-3 text-slate-300 space-y-1"></div>
+              <div class="text-xs text-slate-400 mt-5">建議</div>
+              <div id="risk-suggestions" class="text-sm mt-3 text-emerald-300 space-y-1"></div>
+            </div>
+
+            <div class="rounded-[2rem] bg-slate-900 border border-slate-800 p-6 shadow-xl">
+              <div class="text-sm text-slate-400">股票部位</div>
+              <div id="stockValue" class="text-4xl font-black mt-3">--</div>
+              <div id="stockCount" class="text-xs text-slate-500 mt-3">--</div>
+            </div>
+
+            <div class="rounded-[2rem] bg-slate-900 border border-slate-800 p-6 shadow-xl">
+              <div class="text-sm text-slate-400">FCN / Crypto</div>
+              <div id="altValue" class="text-4xl font-black mt-3">--</div>
+              <div id="altCount" class="text-xs text-slate-500 mt-3">--</div>
+            </div>
+          </div>
+
+          <!-- Allocation + Add Stock -->
+          <div class="grid lg:grid-cols-3 gap-5">
+            <div class="lg:col-span-2 rounded-[2rem] bg-slate-900 border border-slate-800 p-6 shadow-xl">
+              <div class="flex items-center justify-between mb-5">
+                <div>
+                  <h2 class="text-xl font-black">資產配置</h2>
+                  <p class="text-sm text-slate-500 mt-1">Stock / FCN / Crypto allocation</p>
+                </div>
+                <span id="baseCurrency" class="text-sm text-cyan-300 font-bold">USD</span>
+              </div>
+              <div id="allocationBars" class="space-y-5"></div>
+            </div>
+
+            <div class="rounded-[2rem] bg-slate-900 border border-slate-800 p-6 shadow-xl">
+              <h2 class="text-xl font-black mb-1">快速新增股票</h2>
+              <p class="text-sm text-slate-500 mb-5">新增後會立即刷新 Dashboard。</p>
+
+              <div class="space-y-3">
+                <input id="stockSymbol" class="w-full rounded-2xl bg-slate-950 border border-slate-700 px-4 py-3 outline-none focus:border-cyan-400" placeholder="Symbol，例如 AAPL" />
+                <input id="stockQty" type="number" class="w-full rounded-2xl bg-slate-950 border border-slate-700 px-4 py-3 outline-none focus:border-cyan-400" placeholder="Quantity" />
+                <input id="stockCost" type="number" class="w-full rounded-2xl bg-slate-950 border border-slate-700 px-4 py-3 outline-none focus:border-cyan-400" placeholder="Avg Cost" />
+                <button onclick="addStock()" class="w-full rounded-2xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 px-4 py-3 font-black">
+                  新增並刷新
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
+            <div class="text-sm text-slate-400">AI Allocation</div>
+            <h3 class="mt-1 text-2xl font-black text-white">配置建議</h3>
+
+            <div id="allocation-target" class="mt-4 text-sm text-slate-300"></div>
+
+            <div class="mt-4">
+              <div class="text-xs text-slate-500 mb-2">建議行動</div>
+              <ul id="allocation-actions" class="space-y-2 text-sm text-emerald-300"></ul>
+            </div>
+
+            <div id="allocation-warning" class="mt-4 text-xs text-slate-500"></div>
+          </div>
+
+          <!-- Tables -->
+          <div class="grid lg:grid-cols-2 gap-5">
+            <div class="rounded-[2rem] bg-slate-900 border border-slate-800 p-6 shadow-xl">
+              <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-black">我的股票</h2>
+                <span id="stockBadge" class="text-xs rounded-full bg-slate-800 px-3 py-1 text-cyan-300">--</span>
+              </div>
+
+              <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm">
+                  <thead class="text-slate-400 border-b border-slate-800">
+                    <tr>
+                      <th class="py-3">Symbol</th>
+                      <th class="py-3 text-right">Quantity</th>
+                      <th class="py-3 text-right">Avg Cost</th>
+                      <th class="py-3 text-right">Current Price</th>
+                      <th class="py-3 text-right">Value</th>
+                      <th class="py-3 text-right">Volatility</th>
+                      <th class="py-3 text-right">Risk</th>
+                    </tr>
+                  </thead>
+                  <tbody id="stockTable"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="rounded-[2rem] bg-slate-900 border border-slate-800 p-6 shadow-xl">
+              <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-black">最新風險提醒</h2>
+                <span id="alertBadge" class="text-xs rounded-full bg-slate-800 px-3 py-1 text-amber-300">--</span>
+              </div>
+              <div id="alertsList" class="space-y-3"></div>
+            </div>
+          </div>
+
+        </section>
+
+        <div id="toast" class="fixed bottom-5 right-5 hidden rounded-2xl bg-slate-900 border border-slate-700 px-5 py-3 shadow-2xl text-sm z-50"></div>
+
+      </div>
+    </main>
+  </div>
+
+<script>
+const API = "/api/v1";
+
+function token() {
+  return localStorage.getItem("ixai_token");
+}
+
+function authHeaders() {
+  return { "Authorization": `Bearer ${token()}` };
+}
+
+function money(v) {
+  return Number(v || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
+function showToast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.remove("hidden");
+  setTimeout(() => el.classList.add("hidden"), 2600);
+}
+
+function setLoggedIn(isIn) {
+  document.getElementById("authPanel").classList.toggle("hidden", isIn);
+  document.getElementById("appPanel").classList.toggle("hidden", !isIn);
+  document.getElementById("systemStatus").textContent = isIn ? "已登入 / Ownership 保護中" : "等待登入";
+}
+
+async function registerUser() {
+  const email = document.getElementById("registerEmail").value.trim();
+  const password = document.getElementById("registerPassword").value;
+
+  if (!email || !password) {
+    return showToast("請輸入註冊帳密");
+  }
+
+  const url = `${API}/auth/register?email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`;
+  const res = await fetch(url, { method: "POST" });
+  const data = await res.json();
+
+  if (!res.ok) {
+    return showToast(data.detail || "註冊失敗");
+  }
+
+  showToast("註冊成功，請登入");
+}
+
+async function login() {
+  const email = document.getElementById("loginEmail").value.trim();
+  const password = document.getElementById("loginPassword").value;
+
+  if (!email || !password) {
+    return showToast("請輸入帳號密碼");
+  }
+
+  try {
+    const res = await fetch(`${API}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `username=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      return showToast(data.detail || "登入失敗");
+    }
+
+    localStorage.setItem("ixai_token", data.access_token);
+    showToast("登入成功");
+    await loadDashboard();
+
+  } catch (err) {
+    console.error(err);
+    showToast("系統錯誤");
+  }
+}
+
+function logout() {
+  localStorage.removeItem("ixai_token");
+  localStorage.removeItem("ixai_portfolio_id");
+  setLoggedIn(false);
+  showToast("已登出");
+}
+
+async function fetchJson(url, options = {}) {
+  const res = await fetch(url, options);
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    const message = data.detail || `API error: ${res.status}`;
+    throw new Error(message);
+  }
+
+  return data;
+}
+
+async function loadDashboard() {
+  if (!token()) {
+    setLoggedIn(false);
+    return;
+  }
+
+  try {
+    const me = await fetchJson(`${API}/portfolio/me`, { headers: authHeaders() });
+    const portfolioId = me.portfolio_id || me.id;
+
+    if (!portfolioId) {
+      throw new Error("找不到 portfolio id");
+    }
+
+    localStorage.setItem("ixai_portfolio_id", portfolioId);
+
+    const [summary, stocks] = await Promise.all([
+      fetchJson(`${API}/dashboard/summary/${portfolioId}`, { headers: authHeaders() }),
+      fetchJson(`${API}/portfolio/stocks`, { headers: authHeaders() })
+    ]);
+
+    renderSummary(summary, me);
+    renderAllocation(summary);
+    renderStocks(stocks);
+    renderAlerts(summary.latest_alerts || summary.alerts || []);
+    setLoggedIn(true);
+
+  } catch (err) {
+    console.error(err);
+    if (String(err.message).includes("401")) {
+      logout();
+    }
+    showToast(err.message || "讀取失敗");
+  }
+}
+
+function riskClass(level) {
+  const l = String(level || "low").toLowerCase();
+
+  if (l.includes("high") || l.includes("critical")) {
+    return "text-red-300";
+  }
+
+  if (l.includes("medium")) {
+    return "text-amber-300";
+  }
+
+  return "text-emerald-300";
+}
+
+function changeArrow(v) {
+  if (v === "UP") return "↑";
+  if (v === "DOWN") return "↓";
+  return "→";
+}
+
+function renderRiskExplanation(summary) {
+  const explanation = summary.risk_explanation;
+  const changes = summary.risk_changes || {};
+  const levelEl = document.getElementById("risk-level");
+  const alertEl = document.getElementById("risk-alert");
+  const reasonEl = document.getElementById("risk-reasons");
+  const suggestionEl = document.getElementById("risk-suggestions");
+
+  if (explanation) {
+    const explanationLevel = summary.portfolio_risk?.risk_level || summary.risk_level || explanation.level || "-";
+    const riskLevelText =
+      explanationLevel + " " + changeArrow(changes.risk_level_change);
+
+    levelEl.innerText = riskLevelText;
+    levelEl.className = `text-4xl font-black mt-3 ${riskClass(explanationLevel)}`;
+
+    alertEl.innerText = explanation.summary_text || "-";
+
+    if (reasonEl) {
+      reasonEl.innerHTML = (explanation.reasons || [])
+        .map(r => "<div>• " + r + "</div>")
+        .join("");
+    }
+
+    if (suggestionEl) {
+      suggestionEl.innerHTML = (explanation.suggestions || [])
+        .map(s => "<div>• " + s + "</div>")
+        .join("");
+    }
+
+    return;
+  }
+
+  const fallbackLevel = summary.risk_level || summary.overall_risk_level || "LOW";
+  levelEl.innerText = fallbackLevel + " " + changeArrow(changes.risk_level_change);
+  levelEl.className = `text-4xl font-black mt-3 ${riskClass(fallbackLevel)}`;
+  alertEl.innerText = "尚無風險解釋資料";
+
+  if (reasonEl) {
+    reasonEl.innerHTML = "";
+  }
+
+  if (suggestionEl) {
+    suggestionEl.innerHTML = "";
+  }
+}
+
+function renderSummary(s, me) {
+  const currency = s.base_currency || me.base_currency || "USD";
+
+  document.getElementById("totalValue").textContent = `${money(s.total_value)} ${currency}`;
+  document.getElementById("portfolioName").textContent = `${s.portfolio_name || me.name || "My Portfolio"}｜${s.portfolio_id || me.id || ""}`;
+
+  renderRiskExplanation(s);
+  renderAllocationAdvice(s);
+
+  document.getElementById("stockValue").textContent = money(s.stock_value);
+  document.getElementById("stockCount").textContent = `${s.stock_count || 0} 檔股票`;
+
+  document.getElementById("altValue").textContent = money((s.fcn_value || 0) + (s.crypto_value || 0));
+  document.getElementById("altCount").textContent = `${s.fcn_count || 0} FCN｜${s.crypto_count || 0} Crypto`;
+
+  document.getElementById("baseCurrency").textContent = currency;
+  document.getElementById("subtitle").textContent = `登入中｜${s.portfolio_name || me.name || "My Portfolio"}`;
+}
+
+function renderAllocationAdvice(summary) {
+  const allocation = summary.allocation_advice || {};
+  const targetEl = document.getElementById("allocation-target");
+  const actionsEl = document.getElementById("allocation-actions");
+  const warningEl = document.getElementById("allocation-warning");
+
+  if (targetEl) {
+    const t = allocation.target_allocation || {};
+    targetEl.innerText =
+      `Stock ${t.stock || "-"} ｜ Crypto ${t.crypto || "-"} ｜ FCN ${t.fcn || "-"} ｜ Cash ${t.cash || "-"}`;
+  }
+
+  if (actionsEl) {
+    actionsEl.innerHTML = "";
+    (allocation.actions || []).forEach(a => {
+      const li = document.createElement("li");
+      li.innerText = "• " + a;
+      actionsEl.appendChild(li);
+    });
+  }
+
+  if (warningEl) {
+    warningEl.innerText = allocation.warning || "";
+  }
+}
+
+function renderAllocation(s) {
+  const total = Number(s.total_value || 0);
+  const changes = s.risk_changes || {};
+
+  const items = [
+    ["股票", s.stock_value || 0, "bg-cyan-400"],
+    ["FCN", s.fcn_value || 0, "bg-indigo-400"],
+    ["Crypto", s.crypto_value || 0, "bg-emerald-400"]
+  ];
+
+  document.getElementById("allocationBars").innerHTML = items.map(([name, value, color]) => {
+    const pct = name === "Crypto" && s.crypto_ratio !== undefined && s.crypto_ratio !== null
+      ? s.crypto_ratio
+      : total > 0 ? Math.round((value / total) * 1000) / 10 : 0;
+    const pctText = name === "Crypto"
+      ? `${pct}% ${changeArrow(changes.crypto_ratio_change)}`
+      : `${pct}%`;
+
+    return `
+      <div>
+        <div class="flex justify-between text-sm mb-2">
+          <span class="font-bold">${name}</span>
+          <span class="text-slate-400">${money(value)}｜${pctText}</span>
+        </div>
+        <div class="h-4 rounded-full bg-slate-800 overflow-hidden">
+          <div class="h-full ${color}" style="width:${Math.min(pct, 100)}%"></div>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function renderStocks(stocks) {
+  document.getElementById("stockBadge").textContent = `${(stocks || []).length} positions`;
+
+  const rows = (stocks || []).map(s => {
+    const avgCost = s.avg_price ?? s.avg_cost ?? 0;
+    const currentPrice = s.current_price ?? avgCost ?? 0;
+    const value = s.value ?? (Number(s.quantity || 0) * Number(currentPrice || 0));
+    const volatility = s.volatility;
+    const volatilityText = volatility === null || volatility === undefined ? "--" : `${money(volatility)}%`;
+    const riskTag = s.risk_tag ? String(s.risk_tag).toUpperCase() : null;
+    const riskClassMap = {
+      HIGH: "bg-red-500/10 text-red-300 border-red-400/20",
+      MEDIUM: "bg-amber-500/10 text-amber-300 border-amber-400/20",
+      LOW: "bg-emerald-500/10 text-emerald-300 border-emerald-400/20"
+    };
+    const riskClass = riskClassMap[riskTag] || "bg-slate-800 text-slate-400 border-slate-700";
+
+    return `
+  <tr class="border-b border-slate-800 hover:bg-slate-950/70">
+    <td class="py-4 font-black text-cyan-300">${String(s.symbol || "").toUpperCase()}</td>
+    <td class="py-4 text-right">${money(s.quantity)}</td>
+    <td class="py-4 text-right">${money(avgCost)}</td>
+    <td class="py-4 text-right">${money(currentPrice)}</td>
+    <td class="py-4 text-right font-bold">${money(value)}</td>
+    <td class="py-4 text-right">${volatilityText}</td>
+    <td class="py-4 text-right">
+      <span class="inline-flex justify-center min-w-20 rounded-full border px-3 py-1 text-xs font-black ${riskClass}">
+        ${riskTag || "--"}
+      </span>
+    </td>
+  </tr>
+`;
+  }).join("");
+
+  document.getElementById("stockTable").innerHTML = rows || `
+    <tr>
+      <td colspan="7" class="py-5 text-slate-500">尚無股票資料</td>
+    </tr>
+  `;
+}
+
+function renderAlerts(alerts) {
+  document.getElementById("alertBadge").textContent = `${(alerts || []).length} open`;
+
+  const html = (alerts || []).map(a => `
+    <div class="rounded-2xl bg-slate-950 border border-slate-800 p-4">
+      <div class="flex justify-between gap-3">
+        <div class="font-black">${a.title || a.asset_ref || "Alert"}</div>
+        <div class="text-xs px-2 py-1 rounded-lg bg-slate-800 text-cyan-300">${a.severity || a.level || "info"}</div>
+      </div>
+      <div class="text-sm text-slate-400 mt-2">${a.message || ""}</div>
+    </div>
+  `).join("");
+
+  document.getElementById("alertsList").innerHTML = html || `
+    <div class="rounded-2xl bg-slate-950 border border-slate-800 p-5 text-slate-500">
+      目前沒有 open alerts
+    </div>
+  `;
+}
+
+async function addStock() {
+  const symbol = document.getElementById("stockSymbol").value.trim();
+  const quantity = document.getElementById("stockQty").value;
+  const avgCost = document.getElementById("stockCost").value;
+
+  if (!symbol || !quantity || !avgCost) {
+    return showToast("請輸入完整股票資料");
+  }
+
+  try {
+    const url = `${API}/portfolio/stock?symbol=${encodeURIComponent(symbol)}&quantity=${encodeURIComponent(quantity)}&avg_cost=${encodeURIComponent(avgCost)}`;
+    const data = await fetchJson(url, { method: "POST", headers: authHeaders() });
+
+    showToast(data.message || "新增成功");
+
+    document.getElementById("stockSymbol").value = "";
+    document.getElementById("stockQty").value = "";
+    document.getElementById("stockCost").value = "";
+
+    await loadDashboard();
+
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || "新增失敗");
+  }
+}
+
+window.addEventListener("load", loadDashboard);
+</script>
+
+</body>
+</html>

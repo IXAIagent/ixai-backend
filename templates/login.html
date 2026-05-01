@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>一玄AI 登入</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f3f6fb;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      color: #1f2937;
+    }
+    .card {
+      width: 100%;
+      max-width: 400px;
+      background: white;
+      border-radius: 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+      padding: 32px;
+    }
+    .title {
+      font-size: 30px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .subtitle {
+      color: #6b7280;
+      margin-bottom: 24px;
+    }
+    .label {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 14px;
+      color: #374151;
+    }
+    .input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 12px 14px;
+      margin-bottom: 16px;
+      border-radius: 12px;
+      border: 1px solid #d1d5db;
+      font-size: 16px;
+    }
+    .button {
+      width: 100%;
+      padding: 12px 14px;
+      border: none;
+      border-radius: 12px;
+      background: #111827;
+      color: white;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .error {
+      margin-bottom: 16px;
+      color: #b91c1c;
+      font-size: 14px;
+    }
+    .hint {
+      margin-top: 16px;
+      font-size: 13px;
+      color: #6b7280;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="title">一玄AI</div>
+    <div class="subtitle">登入投資 Dashboard</div>
+
+    {% if error %}
+      <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/login">
+      <label class="label">Email</label>
+      <input class="input" type="email" name="email" placeholder="請輸入 Email" required />
+
+      <label class="label">Password</label>
+      <input class="input" type="password" name="password" placeholder="請輸入密碼" required />
+
+      <button class="button" type="submit">登入</button>
+    </form>
+
+    <div class="hint">
+      目前為本地測試版。<br />
+      預設帳號：admin@yixuan.ai<br />
+      預設密碼：12345678
+    </div>
+  </div>
+</body>
+</html>
