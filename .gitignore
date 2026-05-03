@@ -1,4 +1,14 @@
-node_modules
-.next
+__pycache__/
+.pytest_cache/
+*.pyc
+*.pyo
+*.log
 .env
+.env.*
+!.env.example
 .DS_Store
+*.db
+.next/
+node_modules/
+.venv/
+venv/

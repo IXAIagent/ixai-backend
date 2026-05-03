@@ -1,23 +1,37 @@
 from __future__ import annotations
 
+import os
 import time
 from datetime import datetime
-
-import schedule
 
 from app.core.database import SessionLocal
 from app.models.models import Portfolio
 from app.services.daily_summary_service import send_daily_summary
 
 
-BOT_TOKEN = "7656803416:AAFiLzhtBhgQAyxjRFjjziwVD5V4tQx5o1U"
-CHAT_ID = "8761817352"
-
 # 每天推播時間，可自行改
 DAILY_SUMMARY_TIME = "13:16"
 
 
+def get_telegram_config():
+    bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+
+    if not bot_token or not chat_id:
+        print(
+            "Missing Telegram configuration. Please set TELEGRAM_BOT_TOKEN "
+            "and TELEGRAM_CHAT_ID before running the scheduler."
+        )
+        return None, None
+
+    return bot_token, chat_id
+
+
 def job():
+    bot_token, chat_id = get_telegram_config()
+    if not bot_token or not chat_id:
+        return
+
     db = SessionLocal()
     try:
         portfolio = db.query(Portfolio).first()
@@ -28,8 +42,8 @@ def job():
         text = send_daily_summary(
             db=db,
             portfolio_id=portfolio.id,
-            bot_token=BOT_TOKEN,
-            chat_id=CHAT_ID,
+            bot_token=bot_token,
+            chat_id=chat_id,
         )
 
         print("=== DAILY SUMMARY SENT ===")
@@ -43,6 +57,12 @@ def job():
 
 
 def main():
+    bot_token, chat_id = get_telegram_config()
+    if not bot_token or not chat_id:
+        return
+
+    import schedule
+
     print(f"Daily Summary scheduler started. Send time = {DAILY_SUMMARY_TIME}")
     schedule.every().day.at(DAILY_SUMMARY_TIME).do(job)
 

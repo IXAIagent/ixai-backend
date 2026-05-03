@@ -1,14 +1,19 @@
+from math import isfinite
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from app.api.deps import get_current_user, get_owned_portfolio
 from app.core.database import get_db
-from app.models.models import Portfolio, User
+from app.models.models import CryptoPosition, FCNPosition, Portfolio, StockPosition, User
 from app.services.portfolio_service import build_portfolio_summary
 from app.services.push_state_service import should_send_push
 from app.services.telegram_push_service import send_telegram_message
 from app.services.action_service import calculate_stock_action
+from app.services.fcn_monitor_service import FCNMonitorService
+from app.services.risk_engine_v3 import build_risk_engine_v3
 from app.services.risk.portfolio_risk import calculate_portfolio_risk
 from app.services.risk.alert_engine import generate_risk_alert
 from app.services.risk.explanation_engine import generate_risk_explanation
@@ -231,6 +236,152 @@ AI 建議
     send_telegram_message(message)
 
 
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        if value is None:
+            return default
+        number = float(value)
+        return number if number == number else default
+    except Exception:
+        return default
+
+
+def _serialize_fcn_position(fcn: FCNPosition) -> dict[str, Any]:
+    code = getattr(fcn, "fcn_code", None) or getattr(fcn, "name", None) or "FCN"
+    return {
+        "id": getattr(fcn, "id", None),
+        "name": getattr(fcn, "name", None) or code,
+        "fcn_code": getattr(fcn, "fcn_code", None) or code,
+        "code": code,
+        "notional": getattr(fcn, "notional", None),
+        "notional_amount": getattr(fcn, "notional_amount", None) or getattr(fcn, "notional", None),
+        "worst_of_symbol": getattr(fcn, "worst_of_symbol", None) or "",
+        "worst_of": getattr(fcn, "worst_of_symbol", None) or "",
+        "distance_to_ki_pct": getattr(fcn, "distance_to_ki_pct", None),
+        "distance_to_ko_pct": getattr(fcn, "distance_to_ko_pct", None),
+        "risk_level": getattr(fcn, "risk_level", None) or "low",
+    }
+
+
+def _serialize_stock_position(stock: StockPosition) -> dict[str, Any]:
+    quantity = _safe_float(getattr(stock, "quantity", 0))
+    current_price = _safe_float(
+        getattr(stock, "current_price", None)
+        or getattr(stock, "avg_price", 0)
+    )
+    current_value = getattr(stock, "current_value", None)
+    if current_value is None:
+        current_value = quantity * current_price
+
+    return {
+        "id": getattr(stock, "id", None),
+        "symbol": getattr(stock, "symbol", None) or "STOCK",
+        "quantity": getattr(stock, "quantity", None),
+        "avg_price": getattr(stock, "avg_price", None),
+        "current_price": getattr(stock, "current_price", None),
+        "current_value": current_value,
+    }
+
+
+def _serialize_crypto_position(crypto: CryptoPosition) -> dict[str, Any]:
+    quantity = _safe_float(getattr(crypto, "quantity", 0))
+    current_price = _safe_float(getattr(crypto, "current_price", 0))
+    current_value = getattr(crypto, "current_value", None)
+    if current_value is None:
+        current_value = quantity * current_price
+
+    grid_lower = getattr(crypto, "grid_lower", None)
+    grid_upper = getattr(crypto, "grid_upper", None)
+    out_of_range = False
+    if current_price > 0 and grid_lower is not None and grid_upper is not None:
+        out_of_range = current_price < _safe_float(grid_lower) or current_price > _safe_float(grid_upper)
+
+    return {
+        "id": getattr(crypto, "id", None),
+        "symbol": getattr(crypto, "symbol", None) or "CRYPTO",
+        "asset_type": getattr(crypto, "asset_type", None) or "crypto",
+        "quantity": getattr(crypto, "quantity", None),
+        "avg_price": getattr(crypto, "avg_price", None),
+        "current_price": getattr(crypto, "current_price", None),
+        "current_value": current_value,
+        "leverage": getattr(crypto, "leverage", None),
+        "grid_lower": grid_lower,
+        "grid_upper": grid_upper,
+        "grid_out_of_range": out_of_range,
+    }
+
+
+def _merge_alerts(primary: list[dict[str, Any]], secondary: Any) -> list[dict[str, Any]]:
+    alerts: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+
+    for item in [*primary, *(secondary if isinstance(secondary, list) else [])]:
+        if not isinstance(item, dict):
+            continue
+        key = (str(item.get("title") or ""), str(item.get("message") or ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        alerts.append(item)
+
+    return alerts
+
+
+def _ensure_price_source_summary(payload: dict[str, Any]) -> None:
+    raw_summary = payload.get("price_source_summary")
+    if not isinstance(raw_summary, dict):
+        raw_summary = {}
+
+    summary = dict(raw_summary)
+    summary.update({
+        "yahoo": int(_safe_float(raw_summary.get("yahoo"))),
+        "binance": int(_safe_float(raw_summary.get("binance"))),
+        "manual": int(_safe_float(raw_summary.get("manual"))),
+    })
+    payload["price_source_summary"] = summary
+
+
+def _sanitize_payload(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _sanitize_payload(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_payload(item) for item in value]
+    if isinstance(value, float):
+        return value if isfinite(value) else 0.0
+    return value
+
+
+def apply_dashboard_v2_fields(db: Session, portfolio: Portfolio, payload: dict[str, Any]) -> dict[str, Any]:
+    stocks = db.query(StockPosition).filter(StockPosition.portfolio_id == portfolio.id).all()
+    fcns = db.query(FCNPosition).filter(FCNPosition.portfolio_id == portfolio.id).all()
+    cryptos = db.query(CryptoPosition).filter(CryptoPosition.portfolio_id == portfolio.id).all()
+
+    payload["stock_positions"] = [_serialize_stock_position(stock) for stock in stocks]
+    payload["stocks"] = payload["stock_positions"]
+    payload["fcn_positions"] = [_serialize_fcn_position(fcn) for fcn in fcns]
+    payload["crypto_positions"] = [_serialize_crypto_position(crypto) for crypto in cryptos]
+    payload["cash_value"] = _safe_float(payload.get("cash_value"))
+    _ensure_price_source_summary(payload)
+
+    fcn_analysis = []
+    for fcn in fcns:
+        result = FCNMonitorService.analyze_fcn(fcn)
+        if result:
+            fcn_analysis.append(result)
+    payload["fcn_analysis"] = fcn_analysis
+
+    risk_v3 = build_risk_engine_v3(payload)
+    generated_alerts = risk_v3.pop("generated_alerts", [])
+    existing_alerts = payload.get("latest_alerts") or payload.get("alerts") or []
+
+    payload.update(risk_v3)
+    merged_alerts = _merge_alerts(generated_alerts, existing_alerts)
+    payload["alerts"] = merged_alerts
+    payload["latest_alerts"] = merged_alerts
+
+    return _sanitize_payload(payload)
+
+
 
 @router.get("/summary/{portfolio_id}")
 def get_summary(
@@ -355,7 +506,7 @@ def get_summary(
         "risk_asset_ratio": payload["risk_asset_ratio"],
     })
 
-    return payload
+    return apply_dashboard_v2_fields(db, portfolio, payload)
 
 
 @router.get("/alerts/{portfolio_id}")
@@ -395,3 +546,52 @@ def get_my_summary(
         raise HTTPException(status_code=404, detail="Current user has no portfolio")
 
     return get_summary(portfolio=portfolio, db=db)
+
+@router.get("/dev-summary")
+def get_dev_summary():
+    return {
+        "status": "ok",
+        "portfolio_name": "IXAI Demo Portfolio",
+        "total_value": 125000,
+        "risk_level": "MEDIUM",
+        "risk_score": 62,
+        "stock_value": 52000,
+        "fcn_value": 48000,
+        "crypto_value": 25000,
+        "top_risk": "Crypto 佔比偏高",
+        "ai_advice": "目前配置風險中等，建議持續監控 FCN KI 距離、Crypto 槓桿與單一資產集中度。",
+        "alerts": [
+            {
+                "title": "風險提醒",
+                "severity": "MEDIUM",
+                "message": "Crypto 與 FCN 部位需要持續追蹤。"
+            }
+        ]
+    }
+@router.get("/dev-real-summary")
+def get_dev_real_summary(db: Session = Depends(get_db)):
+    portfolio = (
+        db.query(Portfolio)
+        .filter(Portfolio.name == "IXAI Demo Portfolio")
+        .order_by(Portfolio.created_at.desc())
+        .first()
+    )
+
+    if not portfolio:
+        portfolio = db.query(Portfolio).first()
+
+    if not portfolio:
+        return {
+            "status": "empty",
+            "message": "目前資料庫沒有 portfolio",
+        }
+
+    payload = build_portfolio_summary(db, portfolio.id)
+
+    if not payload:
+        raise HTTPException(status_code=404, detail="Portfolio summary not found")
+
+    return apply_dashboard_v2_fields(db, portfolio, {
+        "status": "ok",
+        **payload,
+    })

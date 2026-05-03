@@ -1,7 +1,7 @@
 from datetime import datetime
 import uuid
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, String
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, String, Text
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -36,6 +36,7 @@ class Portfolio(Base):
     stocks = relationship("StockPosition", back_populates="portfolio", cascade="all, delete-orphan")
     fcn_positions = relationship("FCNPosition", back_populates="portfolio", cascade="all, delete-orphan")
     crypto_positions = relationship("CryptoPosition", back_populates="portfolio", cascade="all, delete-orphan")
+    cash_positions = relationship("CashPosition", back_populates="portfolio", cascade="all, delete-orphan")
     alerts = relationship("Alert", back_populates="portfolio", cascade="all, delete-orphan")
 
 
@@ -71,7 +72,12 @@ class FCNPosition(Base):
     fcn_code = Column(String, index=True, nullable=True)
     notional = Column(Float, nullable=True)
     notional_amount = Column(Float, nullable=True)
+    underlyings = Column(Text, nullable=True)
     worst_of_symbol = Column(String, nullable=True)
+    ki_level = Column(Float, nullable=True)
+    ko_level = Column(Float, nullable=True)
+    strike_level = Column(Float, nullable=True)
+    coupon_rate = Column(Float, nullable=True)
     distance_to_ki_pct = Column(Float, nullable=True)
     distance_to_ko_pct = Column(Float, nullable=True)
     risk_level = Column(String, default="low", nullable=False)
@@ -97,6 +103,18 @@ class CryptoPosition(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     portfolio = relationship("Portfolio", back_populates="crypto_positions")
+
+
+class CashPosition(Base):
+    __tablename__ = "cash_positions"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    portfolio_id = Column(String, ForeignKey("portfolios.id"), index=True, nullable=False)
+    currency = Column(String, default="USD", nullable=False)
+    amount = Column(Float, nullable=False, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    portfolio = relationship("Portfolio", back_populates="cash_positions")
 
 
 class Alert(Base):

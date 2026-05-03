@@ -4,7 +4,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.models.models import Alert, CryptoPosition, FCNPosition, Portfolio, StockPosition
+from app.models.models import Alert, CashPosition, CryptoPosition, FCNPosition, Portfolio, StockPosition
 
 from app.services.market_data.service import MarketDataService
 
@@ -18,6 +18,7 @@ def get_portfolio_positions(db: Session, portfolio_id: str) -> dict[str, list[An
         "stocks": db.query(StockPosition).filter(StockPosition.portfolio_id == portfolio_id).all(),
         "cryptos": db.query(CryptoPosition).filter(CryptoPosition.portfolio_id == portfolio_id).all(),
         "fcns": db.query(FCNPosition).filter(FCNPosition.portfolio_id == portfolio_id).all(),
+        "cash": db.query(CashPosition).filter(CashPosition.portfolio_id == portfolio_id).all(),
     }
 
 
@@ -36,8 +37,10 @@ def _value_from_position(position: Any, market_data_service: MarketDataService):
 
     if position_type in {"StockPosition", "CryptoPosition"} and symbol:
         try:
-            price = market_data_service.get_price(symbol)
-            return quantity * float(price)
+            asset_type = getattr(position, "asset_type", None)
+            price_result = market_data_service.get_price(symbol, asset_type=asset_type)
+            if price_result.price is not None:
+                return quantity * float(price_result.price)
         except Exception:
             pass
 
@@ -50,10 +53,11 @@ def _value_from_position(position: Any, market_data_service: MarketDataService):
     return quantity * float(price or 0)
 
 
-def calculate_portfolio_values(stocks, cryptos, fcns) -> dict[str, float]:
+def calculate_portfolio_values(stocks, cryptos, fcns, cash_positions) -> dict[str, float]:
     market_data_service = MarketDataService()
     stock_value = float(sum(_value_from_position(s, market_data_service) for s in stocks))
     crypto_value = float(sum(_value_from_position(c, market_data_service) for c in cryptos))
+    cash_value = float(sum(float(getattr(c, "amount", 0) or 0) for c in cash_positions))
 
     fcn_value = 0.0
     for f in fcns:
@@ -61,11 +65,12 @@ def calculate_portfolio_values(stocks, cryptos, fcns) -> dict[str, float]:
         notional = getattr(f, "notional", None)
         fcn_value += float((notional_amount if notional_amount is not None else notional) or 0)
 
-    total_value = stock_value + crypto_value + fcn_value
+    total_value = stock_value + crypto_value + fcn_value + cash_value
     return {
         "stock_value": stock_value,
         "crypto_value": crypto_value,
         "fcn_value": fcn_value,
+        "cash_value": cash_value,
         "total_value": total_value,
     }
 
@@ -115,6 +120,17 @@ def build_fcn_summary(fcns: list[FCNPosition], limit: int = 5) -> list[dict[str,
     return result
 
 
+def build_cash_summary(cash_positions: list[CashPosition], limit: int = 5) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for cash in cash_positions[:limit]:
+        result.append({
+            "id": getattr(cash, "id", None),
+            "currency": getattr(cash, "currency", None) or "USD",
+            "amount": float(getattr(cash, "amount", 0) or 0),
+        })
+    return result
+
+
 def build_portfolio_summary(db: Session, portfolio_id: str) -> dict[str, Any] | None:
     portfolio = get_portfolio(db, portfolio_id)
     if not portfolio:
@@ -124,8 +140,9 @@ def build_portfolio_summary(db: Session, portfolio_id: str) -> dict[str, Any] | 
     stocks = positions["stocks"]
     cryptos = positions["cryptos"]
     fcns = positions["fcns"]
+    cash_positions = positions["cash"]
     alerts = get_portfolio_alerts(db, portfolio_id)
-    values = calculate_portfolio_values(stocks, cryptos, fcns)
+    values = calculate_portfolio_values(stocks, cryptos, fcns, cash_positions)
     risk_level = calculate_risk_level(alerts)
 
     return {
@@ -136,14 +153,17 @@ def build_portfolio_summary(db: Session, portfolio_id: str) -> dict[str, Any] | 
         "stock_value": values["stock_value"],
         "crypto_value": values["crypto_value"],
         "fcn_value": values["fcn_value"],
+        "cash_value": values["cash_value"],
         "stock_count": len(stocks),
         "crypto_count": len(cryptos),
         "fcn_count": len(fcns),
+        "cash_count": len(cash_positions),
         "risk_level": risk_level,
         "overall_risk_level": risk_level,
         "alerts": build_alert_summary(alerts),
         "latest_alerts": build_alert_summary(alerts),
         "fcn_summary": build_fcn_summary(fcns),
+        "cash_summary": build_cash_summary(cash_positions),
     }
 
 
@@ -164,6 +184,7 @@ def build_allocation_payload(db: Session, portfolio_id: str) -> dict[str, Any] |
             {"asset_class": "stock", "value": summary["stock_value"], "percentage": pct(summary["stock_value"])},
             {"asset_class": "crypto", "value": summary["crypto_value"], "percentage": pct(summary["crypto_value"])},
             {"asset_class": "fcn", "value": summary["fcn_value"], "percentage": pct(summary["fcn_value"])},
+            {"asset_class": "cash", "value": summary["cash_value"], "percentage": pct(summary["cash_value"])},
         ],
     }
 

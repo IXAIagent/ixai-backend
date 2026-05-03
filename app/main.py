@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from app.core.config import settings
 from app.core.database import Base, engine
 import app.models.models  # 重要：載入所有 SQLAlchemy models，包含 User
 from app.api.v1.router import api_router
@@ -22,7 +23,7 @@ Base.metadata.create_all(bind=engine)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # MVP 先開放；正式上線要改成指定網域
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

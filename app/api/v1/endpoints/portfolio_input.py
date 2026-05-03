@@ -1,243 +1,467 @@
-from fastapi import APIRouter, Depends
+import json
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from datetime import datetime
 
 from app.core.database import get_db
-from app.api.deps import get_current_user
-from app.models.models import User, StockPosition, CryptoPosition, Portfolio
+from app.core.security import decode_access_token, get_password_hash
+from app.models.models import CashPosition, CryptoPosition, FCNPosition, Portfolio, StockPosition, User
+
+router = APIRouter()
 
 
-router = APIRouter(prefix="/portfolio", tags=["portfolio_input"])
+class StockInput(BaseModel):
+    symbol: str
+    quantity: float
+    avg_price: float
+    current_price: float
 
 
-# -----------------------
-# Helper：每個 user 都有自己的 default portfolio
-# -----------------------
-def get_or_create_default_portfolio(
-    db: Session,
-    current_user: User,
-) -> Portfolio:
+class CryptoInput(BaseModel):
+    symbol: str
+    asset_type: Optional[str] = "crypto"
+    quantity: float
+    avg_price: Optional[float] = None
+    current_price: float
+    leverage: Optional[float] = None
+    grid_lower: Optional[float] = None
+    grid_upper: Optional[float] = None
+
+
+class CashInput(BaseModel):
+    currency: Optional[str] = "USD"
+    amount: float
+
+
+class FCNInput(BaseModel):
+    name: Optional[str] = None
+    fcn_code: Optional[str] = None
+    notional_amount: Optional[float] = None
+    underlyings: Optional[str] = None
+    underlying_details: Optional[list[dict]] = None
+    worst_of_symbol: Optional[str] = None
+    initial_price: Optional[float] = None
+    current_price: Optional[float] = None
+    ki_level: Optional[float] = None
+    ko_level: Optional[float] = None
+    strike_level: Optional[float] = None
+    coupon_rate: Optional[float] = None
+    risk_level: Optional[str] = None
+
+
+def get_dev_portfolio(db: Session):
     portfolio = (
         db.query(Portfolio)
-        .filter(Portfolio.user_id == current_user.id)
+        .filter(Portfolio.name == "IXAI Demo Portfolio")
+        .order_by(Portfolio.created_at.desc())
         .first()
     )
 
     if portfolio:
         return portfolio
 
-    new_portfolio = Portfolio(
-        name="User Portfolio",
+    portfolio = db.query(Portfolio).first()
+    if portfolio:
+        return portfolio
+
+    user = db.query(User).filter(User.email == "demo@ixai.local").first()
+    if not user:
+        user = User(email="demo@ixai.local", hashed_password=get_password_hash("demo"))
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    portfolio = Portfolio(
+        name="IXAI Demo Portfolio",
         base_currency="USD",
-        user_id=current_user.id,
+        user_id=user.id,
+    )
+    db.add(portfolio)
+    db.commit()
+    db.refresh(portfolio)
+
+    return portfolio
+
+
+def get_bearer_token(request: Request):
+    authorization = request.headers.get("authorization", "")
+    scheme, _, token = authorization.partition(" ")
+
+    if scheme.lower() != "bearer" or not token.strip():
+        return None
+
+    return token.strip()
+
+
+def get_request_user(request: Request, db: Session):
+    token = get_bearer_token(request)
+    if not token:
+        return None
+
+    payload = decode_access_token(token)
+    if not payload or not payload.get("sub"):
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    user = db.query(User).filter(User.id == payload["sub"]).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    return user
+
+
+def get_or_create_user_portfolio(db: Session, user: User):
+    portfolio = (
+        db.query(Portfolio)
+        .filter(Portfolio.user_id == user.id)
+        .order_by(Portfolio.created_at.asc())
+        .first()
     )
 
-    db.add(new_portfolio)
+    if portfolio:
+        return portfolio
+
+    portfolio = Portfolio(
+        name="IXAI Portfolio",
+        base_currency="USD",
+        user_id=user.id,
+    )
+    db.add(portfolio)
     db.commit()
-    db.refresh(new_portfolio)
+    db.refresh(portfolio)
 
-    return new_portfolio
-
-
-# -----------------------
-# 查詢自己的 Portfolio
-# -----------------------
-@router.get("/me")
-def get_my_portfolio(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    portfolio = get_or_create_default_portfolio(db, current_user)
-
-    return {
-        "id": portfolio.id,
-        "name": portfolio.name,
-        "base_currency": portfolio.base_currency,
-        "user_id": portfolio.user_id,
-    }
+    return portfolio
 
 
-# -----------------------
-# 新增股票：只會加到目前登入者 portfolio
-# -----------------------
+def get_request_portfolio(request: Request, db: Session):
+    user = get_request_user(request, db)
+    if user:
+        return get_or_create_user_portfolio(db, user)
+
+    return get_dev_portfolio(db)
+
+
+def _clean_text(value: Optional[str], fallback: str = "") -> str:
+    text = str(value or "").strip()
+    return text or fallback
+
+
+def _clean_symbol(value: Optional[str], fallback: str = "") -> str:
+    return _clean_text(value, fallback).upper()
+
+
+def _distance_to_barrier_pct(
+    initial_price: Optional[float],
+    current_price: Optional[float],
+    level_pct: Optional[float],
+    direction: str,
+) -> Optional[float]:
+    if initial_price is None or current_price is None or level_pct is None:
+        return None
+
+    if initial_price <= 0 or current_price <= 0:
+        return None
+
+    barrier_price = initial_price * (level_pct / 100)
+    if direction == "down":
+        return ((current_price - barrier_price) / current_price) * 100
+
+    return ((barrier_price - current_price) / current_price) * 100
+
+
+def _fcn_risk_level(payload: FCNInput, distance_to_ki_pct: Optional[float]) -> str:
+    risk_level = _clean_text(payload.risk_level).lower()
+    if risk_level in {"low", "medium", "high"}:
+        return risk_level
+
+    if distance_to_ki_pct is None:
+        return "low"
+
+    if distance_to_ki_pct <= 10:
+        return "high"
+
+    if distance_to_ki_pct <= 20:
+        return "medium"
+
+    return "low"
+
+
+def _fcn_underlyings_value(payload: FCNInput) -> Optional[str]:
+    if payload.underlying_details is not None:
+        return json.dumps(payload.underlying_details, ensure_ascii=False, separators=(",", ":"))
+
+    underlyings = _clean_text(payload.underlyings)
+    return underlyings or None
+
+
+def _set_fcn_field_if_present(fcn: FCNPosition, field_name: str, value):
+    if value is not None and hasattr(type(fcn), field_name):
+        setattr(fcn, field_name, value)
+
+
 @router.post("/stock")
-def add_stock(
-    symbol: str,
-    quantity: float,
-    avg_cost: float,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    portfolio = get_or_create_default_portfolio(db, current_user)
+def add_stock(payload: StockInput, request: Request, db: Session = Depends(get_db)):
+    portfolio = get_request_portfolio(request, db)
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="No portfolio found")
 
-    position = StockPosition(
+    stock = StockPosition(
         portfolio_id=portfolio.id,
-        symbol=symbol.upper(),
-        quantity=quantity,
-        avg_price=avg_cost,
+        symbol=payload.symbol.upper(),
+        quantity=payload.quantity,
+        avg_price=payload.avg_price,
+        current_price=payload.current_price,
+        current_value=payload.quantity * payload.current_price,
     )
 
-    db.add(position)
+    db.add(stock)
     db.commit()
-    db.refresh(position)
+    db.refresh(stock)
 
-    return {
-        "status": "success",
-        "message": f"{symbol.upper()} 已加入",
-        "portfolio_id": portfolio.id,
-        "stock_id": position.id,
-    }
-
-
-# -----------------------
-# 查詢自己的股票
-# -----------------------
-from app.services.market_data.service import MarketDataService
-from app.services.risk.volatility import calculate_volatility
+    return {"status": "ok", "message": "Stock added", "id": stock.id}
 
 
 @router.get("/stocks")
-def list_my_stocks(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    portfolio = get_or_create_default_portfolio(db, current_user)
+def list_stocks(request: Request, db: Session = Depends(get_db)):
+    portfolio = get_request_portfolio(request, db)
+    if not portfolio:
+        return []
 
-    stocks = (
+    return portfolio.stocks
+
+
+@router.delete("/stock/{stock_id}")
+def delete_stock(stock_id: str, request: Request, db: Session = Depends(get_db)):
+    portfolio = get_request_portfolio(request, db)
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="No portfolio found")
+
+    stock = (
         db.query(StockPosition)
-        .filter(StockPosition.portfolio_id == portfolio.id)
-        .all()
+        .filter(
+            StockPosition.id == stock_id,
+            StockPosition.portfolio_id == portfolio.id,
+        )
+        .first()
     )
 
-    crypto_positions = (
-        db.query(CryptoPosition)
-        .filter(CryptoPosition.portfolio_id == portfolio.id)
-        .all()
-    )
+    if not stock:
+        raise HTTPException(status_code=404, detail="Stock not found")
 
-    service = MarketDataService()
-
-    result = []
-
-    # 股票
-    for s in stocks:
-        symbol = str(s.symbol or "").upper().strip()
-
-        try:
-            current_price = service.get_price(symbol)
-        except Exception:
-            current_price = s.avg_price
-
-        try:
-            volatility = calculate_volatility(symbol)
-        except Exception:
-            volatility = None
-
-        volatility_pct = round(volatility * 100, 2) if volatility is not None else None
-        if volatility_pct is None:
-            risk_tag = None
-        elif volatility_pct < 25:
-            risk_tag = "LOW"
-        elif volatility_pct <= 60:
-            risk_tag = "MEDIUM"
-        else:
-            risk_tag = "HIGH"
-
-        value = float(s.quantity or 0) * float(current_price or 0)
-        result.append({
-            "symbol": symbol,
-            "quantity": s.quantity,
-            "avg_price": s.avg_price,
-            "current_price": round(float(current_price or 0), 2),
-            "volatility": volatility_pct,
-            "risk_tag": risk_tag,
-            "value": round(value, 2),
-        })
-
-    # Crypto
-    for c in crypto_positions:
-        symbol = str(c.symbol or "").upper().strip()
-
-        try:
-            current_price = service.get_price(symbol)
-        except Exception:
-            current_price = c.avg_price
-
-        try:
-            volatility = calculate_volatility(symbol)
-        except Exception:
-            volatility = None
-
-        volatility_pct = round(volatility * 100, 2) if volatility is not None else None
-        if volatility_pct is None:
-            risk_tag = None
-        elif volatility_pct < 25:
-            risk_tag = "LOW"
-        elif volatility_pct <= 60:
-            risk_tag = "MEDIUM"
-        else:
-            risk_tag = "HIGH"
-
-        value = float(c.quantity or 0) * float(current_price or 0)
-
-        result.append({
-            "symbol": symbol,
-            "quantity": c.quantity,
-            "avg_price": c.avg_price,
-            "current_price": round(float(current_price or 0), 2),
-            "volatility": volatility_pct,
-            "risk_tag": risk_tag,
-            "value": round(value, 2),
-        })
-    return result
-
-
-# -----------------------
-# 新增 Crypto：只會加到目前登入者 portfolio
-# -----------------------
-@router.post("/crypto")
-def add_crypto(
-    symbol: str,
-    quantity: float,
-    price: float,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    portfolio = get_or_create_default_portfolio(db, current_user)
-
-    position = CryptoPosition(
-    portfolio_id=portfolio.id,
-    symbol=symbol.upper(),
-    quantity=quantity,
-    avg_price=price,
-)
-
-    db.add(position)
+    db.delete(stock)
     db.commit()
-    db.refresh(position)
 
-    return {
-        "status": "success",
-        "message": f"{symbol.upper()} 已加入",
-        "portfolio_id": portfolio.id,
-        "crypto_id": position.id,
-    }
+    return {"status": "ok", "message": "Stock deleted"}
 
 
-# -----------------------
-# 查詢自己的 Crypto
-# -----------------------
+@router.post("/crypto")
+def add_crypto(payload: CryptoInput, request: Request, db: Session = Depends(get_db)):
+    portfolio = get_request_portfolio(request, db)
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="No portfolio found")
+
+    crypto = CryptoPosition(
+        portfolio_id=portfolio.id,
+        symbol=payload.symbol.upper().strip(),
+        asset_type=_clean_text(payload.asset_type, "crypto").lower(),
+        quantity=payload.quantity,
+        avg_price=payload.avg_price,
+        current_price=payload.current_price,
+        current_value=payload.quantity * payload.current_price,
+        leverage=payload.leverage,
+        grid_lower=payload.grid_lower,
+        grid_upper=payload.grid_upper,
+    )
+
+    db.add(crypto)
+    db.commit()
+    db.refresh(crypto)
+
+    return {"status": "ok", "message": "Crypto added", "id": crypto.id}
+
+
 @router.get("/crypto")
-def list_my_crypto(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    portfolio = get_or_create_default_portfolio(db, current_user)
+def list_crypto(request: Request, db: Session = Depends(get_db)):
+    portfolio = get_request_portfolio(request, db)
+    if not portfolio:
+        return []
+
+    return portfolio.crypto_positions
+
+
+@router.delete("/crypto/{crypto_id}")
+def delete_crypto(crypto_id: str, request: Request, db: Session = Depends(get_db)):
+    portfolio = get_request_portfolio(request, db)
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="No portfolio found")
 
     crypto = (
         db.query(CryptoPosition)
-        .filter(CryptoPosition.portfolio_id == portfolio.id)
-        .all()
+        .filter(
+            CryptoPosition.id == crypto_id,
+            CryptoPosition.portfolio_id == portfolio.id,
+        )
+        .first()
     )
 
-    return crypto
+    if not crypto:
+        raise HTTPException(status_code=404, detail="Crypto position not found")
+
+    db.delete(crypto)
+    db.commit()
+
+    return {"status": "ok", "message": "Crypto deleted"}
+
+
+@router.post("/cash")
+def upsert_cash(payload: CashInput, request: Request, db: Session = Depends(get_db)):
+    portfolio = get_request_portfolio(request, db)
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="No portfolio found")
+
+    if payload.amount < 0:
+        raise HTTPException(status_code=400, detail="Cash amount must be positive")
+
+    currency = _clean_symbol(payload.currency, portfolio.base_currency or "USD")
+    cash = (
+        db.query(CashPosition)
+        .filter(
+            CashPosition.portfolio_id == portfolio.id,
+            CashPosition.currency == currency,
+        )
+        .first()
+    )
+
+    if cash:
+        cash.amount = payload.amount
+    else:
+        cash = CashPosition(
+            portfolio_id=portfolio.id,
+            currency=currency,
+            amount=payload.amount,
+        )
+        db.add(cash)
+
+    db.commit()
+    db.refresh(cash)
+
+    return {"status": "ok", "message": "Cash updated", "id": cash.id}
+
+
+@router.get("/cash")
+def list_cash(request: Request, db: Session = Depends(get_db)):
+    portfolio = get_request_portfolio(request, db)
+    if not portfolio:
+        return []
+
+    return portfolio.cash_positions
+
+
+@router.delete("/cash/{cash_id}")
+def delete_cash(cash_id: str, request: Request, db: Session = Depends(get_db)):
+    portfolio = get_request_portfolio(request, db)
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="No portfolio found")
+
+    cash = (
+        db.query(CashPosition)
+        .filter(
+            CashPosition.id == cash_id,
+            CashPosition.portfolio_id == portfolio.id,
+        )
+        .first()
+    )
+
+    if not cash:
+        raise HTTPException(status_code=404, detail="Cash position not found")
+
+    db.delete(cash)
+    db.commit()
+
+    return {"status": "ok", "message": "Cash deleted"}
+
+
+@router.post("/fcn")
+def add_fcn(payload: FCNInput, request: Request, db: Session = Depends(get_db)):
+    portfolio = get_request_portfolio(request, db)
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="No portfolio found")
+
+    distance_to_ki_pct = _distance_to_barrier_pct(
+        payload.initial_price,
+        payload.current_price,
+        payload.ki_level,
+        "down",
+    )
+    distance_to_ko_pct = _distance_to_barrier_pct(
+        payload.initial_price,
+        payload.current_price,
+        payload.ko_level,
+        "up",
+    )
+    code = _clean_text(payload.fcn_code, _clean_text(payload.name, "FCN"))
+    underlyings = _fcn_underlyings_value(payload)
+
+    fcn = FCNPosition(
+        portfolio_id=portfolio.id,
+        name=_clean_text(payload.name, code),
+        fcn_code=code,
+        notional=payload.notional_amount,
+        notional_amount=payload.notional_amount,
+        underlyings=underlyings,
+        worst_of_symbol=_clean_symbol(payload.worst_of_symbol),
+        ki_level=payload.ki_level,
+        ko_level=payload.ko_level,
+        strike_level=payload.strike_level,
+        coupon_rate=payload.coupon_rate,
+        distance_to_ki_pct=distance_to_ki_pct,
+        distance_to_ko_pct=distance_to_ko_pct,
+        risk_level=_fcn_risk_level(payload, distance_to_ki_pct),
+    )
+    _set_fcn_field_if_present(fcn, "underlyings", underlyings)
+    _set_fcn_field_if_present(fcn, "initial_price", payload.initial_price)
+    _set_fcn_field_if_present(fcn, "current_price", payload.current_price)
+    _set_fcn_field_if_present(fcn, "ki_level", payload.ki_level)
+    _set_fcn_field_if_present(fcn, "ko_level", payload.ko_level)
+    _set_fcn_field_if_present(fcn, "strike_level", payload.strike_level)
+    _set_fcn_field_if_present(fcn, "coupon_rate", payload.coupon_rate)
+
+    db.add(fcn)
+    db.commit()
+    db.refresh(fcn)
+
+    return {"status": "ok", "message": "FCN added", "id": fcn.id}
+
+
+@router.get("/fcns")
+def list_fcns(request: Request, db: Session = Depends(get_db)):
+    portfolio = get_request_portfolio(request, db)
+    if not portfolio:
+        return []
+
+    return portfolio.fcn_positions
+
+
+@router.delete("/fcn/{fcn_id}")
+def delete_fcn(fcn_id: str, request: Request, db: Session = Depends(get_db)):
+    portfolio = get_request_portfolio(request, db)
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="No portfolio found")
+
+    fcn = (
+        db.query(FCNPosition)
+        .filter(
+            FCNPosition.id == fcn_id,
+            FCNPosition.portfolio_id == portfolio.id,
+        )
+        .first()
+    )
+
+    if not fcn:
+        raise HTTPException(status_code=404, detail="FCN position not found")
+
+    db.delete(fcn)
+    db.commit()
+
+    return {"status": "ok", "message": "FCN deleted"}
