@@ -21,9 +21,30 @@ templates = Jinja2Templates(directory="templates")
 # 正式上線後建議改用 Alembic migration
 Base.metadata.create_all(bind=engine)
 
+# CORS：允許 Vercel 前端與本機開發環境呼叫 Render 後端
+# - settings.cors_origins 保留原本 .env / config 設定
+# - allow_origin_regex 允許 Vercel preview / production 子網域
+def _normalize_cors_origins(value):
+    if not value:
+        return []
+    if isinstance(value, str):
+        return [origin.strip() for origin in value.split(",") if origin.strip()]
+    return [origin for origin in value if origin]
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=list(
+        dict.fromkeys(
+            _normalize_cors_origins(settings.cors_origins)
+            + [
+                "https://ixai-website-clean.vercel.app",
+                "http://localhost:3000",
+                "http://127.0.0.1:3000",
+            ]
+        )
+    ),
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
