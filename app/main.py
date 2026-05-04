@@ -21,30 +21,9 @@ templates = Jinja2Templates(directory="templates")
 # 正式上線後建議改用 Alembic migration
 Base.metadata.create_all(bind=engine)
 
-# CORS：允許 Vercel 前端與本機開發環境呼叫 Render 後端
-# - settings.cors_origins 保留原本 .env / config 設定
-# - allow_origin_regex 允許 Vercel preview / production 子網域
-def _normalize_cors_origins(value):
-    if not value:
-        return []
-    if isinstance(value, str):
-        return [origin.strip() for origin in value.split(",") if origin.strip()]
-    return [origin for origin in value if origin]
-
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=list(
-        dict.fromkeys(
-            _normalize_cors_origins(settings.cors_origins)
-            + [
-                "https://ixai-website-clean.vercel.app",
-                "http://localhost:3000",
-                "http://127.0.0.1:3000",
-            ]
-        )
-    ),
-    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -94,6 +73,72 @@ def health_check():
         "status": "ok",
         "service": "IXAI Agent",
     }
+
+
+# Demo fallback data: keep frontend alive even before real portfolio/database is seeded.
+def _demo_dashboard_payload():
+    return {
+        "mode": "demo",
+        "summary": "IXAI backend is live. Demo data is returned until real portfolio data is connected.",
+        "alerts": [
+            {"level": "medium", "message": "Backend deployed on Render and connected to Vercel."},
+            {"level": "low", "message": "Demo data active. Next step: connect real FCN / stock / crypto positions."},
+        ],
+        "allocation": [
+            {"name": "US Stocks", "value": 58},
+            {"name": "FCN", "value": 30},
+            {"name": "Crypto / Grid", "value": 12},
+        ],
+        "stocks": [
+            {"symbol": "AAPL", "quantity": 100, "cost": 140.26, "price": 190.0, "pnl_pct": 35.5},
+            {"symbol": "TSLA", "quantity": 50, "cost": 160.91, "price": 180.0, "pnl_pct": 11.9},
+            {"symbol": "NVDA", "quantity": 10, "cost": 127.0, "price": 140.0, "pnl_pct": 10.2},
+        ],
+        "cash": {"currency": "USD", "amount": 25000},
+        "fcn_positions": [
+            {
+                "name": "FCN219M",
+                "underlyings": ["MDB", "AFRM", "MRVL", "TSLA"],
+                "ki": 65,
+                "ko": 100,
+                "strike": 95,
+                "risk_level": "medium",
+            }
+        ],
+        "fcn_analysis": [
+            {
+                "name": "FCN219M",
+                "worst_symbol": "TSLA",
+                "distance_to_KI": 22.5,
+                "distance_to_KO": 8.0,
+                "risk_level": "medium",
+            }
+        ],
+        "crypto": [
+            {"symbol": "BTCUSDT", "strategy": "Long Grid", "range": "72000-82000", "risk_level": "medium"},
+            {"symbol": "BNBUSDT", "strategy": "Long Grid", "range": "600-700", "risk_level": "low"},
+        ],
+        "risk_sources": [
+            {"source": "FCN KI distance", "level": "medium"},
+            {"source": "Grid range proximity", "level": "medium"},
+        ],
+        "summary_cards": [
+            {"title": "Backend", "value": "Live"},
+            {"title": "Frontend", "value": "Connected"},
+            {"title": "Data", "value": "Demo"},
+        ],
+    }
+
+
+@app.get("/api/v1/dashboard/dev-real-summary")
+def demo_dashboard_summary():
+    return _demo_dashboard_payload()
+
+
+@app.get("/api/v1/dashboard/my-summary")
+def my_dashboard_summary():
+    return _demo_dashboard_payload()
+
 
 
 app.include_router(api_router, prefix="/api/v1")
