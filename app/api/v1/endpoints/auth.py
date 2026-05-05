@@ -1,6 +1,4 @@
-from urllib.parse import parse_qs
-
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -17,6 +15,11 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 class RegisterRequest(BaseModel):
+    email: str
+    password: str
+
+
+class LoginRequest(BaseModel):
     email: str
     password: str
 
@@ -61,22 +64,10 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/login")
-async def login(request: Request, db: Session = Depends(get_db)):
-    content_type = request.headers.get("content-type", "")
+def login(payload: LoginRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == payload.email).first()
 
-    if "application/json" in content_type:
-        data = await request.json()
-        username = data.get("username") or data.get("email")
-        password = data.get("password")
-    else:
-        raw = (await request.body()).decode()
-        form = parse_qs(raw)
-        username = form.get("username", [""])[0]
-        password = form.get("password", [""])[0]
-
-    user = db.query(User).filter(User.email == username).first()
-
-    if not user or not verify_password(password, user.hashed_password):
+    if not user or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     token = create_access_token({"sub": user.id})
