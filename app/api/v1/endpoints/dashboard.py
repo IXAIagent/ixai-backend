@@ -351,6 +351,185 @@ def _sanitize_payload(value: Any) -> Any:
     return value
 
 
+def _format_pct(value: Any) -> str:
+    if value is None:
+        return "unknown"
+    number = _safe_float(value)
+    if abs(number) <= 1:
+        number *= 100
+    return f"{number:.1f}%"
+
+
+def _position_value(position: dict[str, Any]) -> float:
+    current_value = position.get("current_value")
+    if current_value is not None:
+        return _safe_float(current_value)
+
+    quantity = _safe_float(position.get("quantity"))
+    price = _safe_float(position.get("current_price") or position.get("avg_price"))
+    return quantity * price
+
+
+def build_rule_based_ai_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    total_value = _safe_float(payload.get("total_value"))
+    stock_value = _safe_float(payload.get("stock_value"))
+    cash_value = _safe_float(payload.get("cash_value"))
+    crypto_value = _safe_float(payload.get("crypto_value"))
+    fcn_value = _safe_float(payload.get("fcn_value"))
+    fcn_count = int(_safe_float(payload.get("fcn_count")))
+
+    if total_value <= 0:
+        total_value = stock_value + cash_value + crypto_value + fcn_value
+
+    stock_ratio = stock_value / total_value if total_value > 0 else 0
+    cash_ratio = cash_value / total_value if total_value > 0 else 0
+    crypto_ratio = crypto_value / total_value if total_value > 0 else 0
+
+    stock_positions = [
+        item for item in payload.get("stock_positions", [])
+        if isinstance(item, dict)
+    ]
+    fcn_analysis = [
+        item for item in payload.get("fcn_analysis", [])
+        if isinstance(item, dict)
+    ]
+    crypto_positions = [
+        item for item in payload.get("crypto_positions", [])
+        if isinstance(item, dict)
+    ]
+
+    messages: list[str] = []
+    rule_alerts: list[dict[str, Any]] = []
+    risk_scores: list[int] = []
+    top_risk = "目前無明顯單一風險來源"
+
+    top_stock = None
+    top_stock_ratio = 0.0
+    for stock in stock_positions:
+        ratio = _position_value(stock) / total_value if total_value > 0 else 0
+        if ratio > top_stock_ratio:
+            top_stock_ratio = ratio
+            top_stock = stock
+
+    if top_stock and top_stock_ratio > 0.5:
+        symbol = str(top_stock.get("symbol") or "單一股票").upper()
+        top_risk = f"{symbol} concentration"
+        risk_scores.append(90)
+        messages.append(
+            f"{symbol} 佔投資組合 {_format_pct(top_stock_ratio)}，單一股票集中度偏高"
+        )
+        rule_alerts.append({
+            "title": "單一股票集中度過高",
+            "severity": "HIGH",
+            "message": f"{symbol} 佔投資組合 {_format_pct(top_stock_ratio)}，建議降低單一資產曝險。",
+        })
+    elif stock_ratio >= 0.4:
+        risk_scores.append(50)
+        messages.append(f"股票部位約佔 {_format_pct(stock_ratio)}，需持續留意市場波動與產業集中度")
+
+    if total_value > 0 and cash_ratio < 0.05:
+        if top_risk == "目前無明顯單一風險來源":
+            top_risk = "cash buffer low"
+        risk_scores.append(75 if cash_value > 0 else 85)
+        messages.append(
+            f"現金水位僅 {_format_pct(cash_ratio)}，低於總資產 5%，流動性緩衝偏低"
+        )
+        rule_alerts.append({
+            "title": "現金水位偏低",
+            "severity": "HIGH" if cash_value <= 0 else "MEDIUM",
+            "message": "現金水位低於總資產 5%，建議補足短期流動性緩衝。",
+        })
+
+    if fcn_analysis:
+        fcn = next(
+            (
+                item for item in fcn_analysis
+                if str(item.get("risk_level") or "").lower() in {"high", "medium"}
+            ),
+            fcn_analysis[0],
+        )
+        symbol = fcn.get("worst_symbol") or fcn.get("worst_of") or "worst-of"
+        distance = fcn.get("distance_to_KI")
+        if distance is None:
+            distance = fcn.get("distance_to_ki_pct")
+        fcn_risk = str(fcn.get("risk_level") or "unknown").lower()
+        if fcn_risk == "high":
+            risk_scores.append(90)
+            if top_risk == "目前無明顯單一風險來源":
+                top_risk = f"FCN {symbol} KI risk"
+        elif fcn_risk == "medium":
+            risk_scores.append(65)
+            if top_risk == "目前無明顯單一風險來源":
+                top_risk = f"FCN {symbol} monitoring"
+        messages.append(
+            f"FCN 共 {fcn_count or len(fcn_analysis)} 檔，名目本金約 {fcn_value:,.0f}；"
+            f"目前 worst-of 為 {symbol}，距離 KI 約 {_format_pct(distance)}，風險等級 {fcn_risk}"
+        )
+
+    if crypto_positions or crypto_value > 0:
+        crypto_notes: list[str] = []
+        leveraged = [
+            item for item in crypto_positions
+            if _safe_float(item.get("leverage")) > 1
+        ]
+        grid_out = [
+            item for item in crypto_positions
+            if item.get("grid_out_of_range")
+        ]
+        if leveraged:
+            symbols = ", ".join(str(item.get("symbol") or "CRYPTO").upper() for item in leveraged[:3])
+            crypto_notes.append(f"{symbols} 有槓桿曝險")
+            risk_scores.append(75)
+            if top_risk == "目前無明顯單一風險來源":
+                top_risk = "crypto leverage risk"
+        if grid_out:
+            symbols = ", ".join(str(item.get("symbol") or "GRID").upper() for item in grid_out[:3])
+            crypto_notes.append(f"{symbols} 已超出 grid 區間")
+            risk_scores.append(75)
+            if top_risk == "目前無明顯單一風險來源":
+                top_risk = "grid range risk"
+        if not crypto_notes and crypto_ratio >= 0.3:
+            crypto_notes.append(f"Crypto 佔比 {_format_pct(crypto_ratio)}，波動資產比重偏高")
+            risk_scores.append(60)
+        if crypto_notes:
+            messages.append("Crypto / Grid 風險：" + "；".join(crypto_notes))
+
+    existing_alerts = [
+        item for item in payload.get("alerts", [])
+        if isinstance(item, dict)
+    ]
+    if existing_alerts:
+        messages.append(f"目前另有 {len(existing_alerts)} 則風險提醒，建議一併檢視")
+
+    if not messages:
+        messages.append(
+            "目前投資組合未出現明顯單一風險來源，建議持續追蹤價格更新、FCN KI 距離與現金水位"
+        )
+        risk_scores.append(20)
+
+    max_score = max(risk_scores or [20])
+    if max_score >= 80:
+        risk_level = "high"
+    elif max_score >= 50:
+        risk_level = "medium"
+    else:
+        risk_level = "low"
+
+    if risk_level == "high":
+        closing = "建議先處理最高風險來源，並補足現金緩衝，再逐步分散至不同產業或資產類別。"
+    elif risk_level == "medium":
+        closing = "建議設定調整優先順序，降低集中或槓桿曝險，並保留足夠現金以應對波動。"
+    else:
+        closing = "建議維持定期檢視，避免單一資產、FCN 或 Crypto 曝險在市場波動時快速放大。"
+
+    return {
+        "risk_level": risk_level,
+        "top_risk": top_risk,
+        "ai_advice": "；".join(messages) + "。" + closing,
+        "alerts": rule_alerts,
+    }
+
+
 def apply_dashboard_v2_fields(db: Session, portfolio: Portfolio, payload: dict[str, Any]) -> dict[str, Any]:
     stocks = db.query(StockPosition).filter(StockPosition.portfolio_id == portfolio.id).all()
     fcns = db.query(FCNPosition).filter(FCNPosition.portfolio_id == portfolio.id).all()
@@ -376,6 +555,14 @@ def apply_dashboard_v2_fields(db: Session, portfolio: Portfolio, payload: dict[s
 
     payload.update(risk_v3)
     merged_alerts = _merge_alerts(generated_alerts, existing_alerts)
+    payload["alerts"] = merged_alerts
+    payload["latest_alerts"] = merged_alerts
+
+    ai_summary = build_rule_based_ai_summary(payload)
+    payload["risk_level"] = ai_summary["risk_level"]
+    payload["top_risk"] = ai_summary["top_risk"]
+    payload["ai_advice"] = ai_summary["ai_advice"]
+    merged_alerts = _merge_alerts(ai_summary["alerts"], payload["alerts"])
     payload["alerts"] = merged_alerts
     payload["latest_alerts"] = merged_alerts
 
