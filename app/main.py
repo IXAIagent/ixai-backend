@@ -7,6 +7,8 @@ try:
 except ModuleNotFoundError:
     from app.api.v1.router import api_router
 from app.core.config import settings
+from app.core.database import Base, engine
+import app.models.models  # noqa: F401
 
 
 def _build_cors_origins() -> list[str]:
@@ -59,6 +61,11 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.on_event("startup")
+def init_db_tables():
+    Base.metadata.create_all(bind=engine)
 
 
 app.include_router(api_router, prefix="/api/v1")
