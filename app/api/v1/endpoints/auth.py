@@ -23,34 +23,41 @@ class RegisterRequest(BaseModel):
 
 @router.post("/register")
 def register(payload: RegisterRequest, db: Session = Depends(get_db)):
-    existing = db.query(User).filter(User.email == payload.email).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="Email already registered")
+    try:
+        existing = db.query(User).filter(User.email == payload.email).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="Email already registered")
 
-    user = User(
-        email=payload.email,
-        hashed_password=get_password_hash(payload.password),
-        is_active=True,
-    )
+        user = User(
+            email=payload.email,
+            hashed_password=get_password_hash(payload.password),
+            is_active=True,
+        )
 
-    db.add(user)
-    db.flush()
+        db.add(user)
+        db.flush()
 
-    portfolio = Portfolio(
-        name="IXAI Portfolio",
-        base_currency="USD",
-        user_id=user.id,
-    )
-    db.add(portfolio)
+        portfolio = Portfolio(
+            name="IXAI Portfolio",
+            base_currency="USD",
+            user_id=user.id,
+        )
+        db.add(portfolio)
 
-    db.commit()
-    db.refresh(user)
+        db.commit()
+        db.refresh(user)
 
-    return {
-        "status": "ok",
-        "message": "User registered",
-        "email": user.email,
-    }
+        return {
+            "status": "ok",
+            "message": "User registered",
+            "email": user.email,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        print("REGISTER ERROR:", str(e))
+        raise
 
 
 @router.post("/login")
@@ -87,4 +94,3 @@ def me(current_user: User = Depends(get_current_user)):
         "email": current_user.email,
         "is_active": current_user.is_active,
     }
-
