@@ -1,10 +1,12 @@
 import json
+import os
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import decode_access_token, get_password_hash
 from app.models.models import CashPosition, CryptoPosition, FCNPosition, Portfolio, StockPosition, User
@@ -142,6 +144,27 @@ def get_request_portfolio(request: Request, db: Session):
     return get_dev_portfolio(db)
 
 
+def is_development_env() -> bool:
+    env = (
+        os.getenv("APP_ENV")
+        or os.getenv("ENV")
+        or getattr(settings, "ENVIRONMENT", "")
+        or ""
+    )
+    return env.strip().lower() in {"", "dev", "development", "local"}
+
+
+def get_write_portfolio(request: Request, db: Session):
+    user = get_request_user(request, db)
+    if user:
+        return get_or_create_user_portfolio(db, user)
+
+    if is_development_env():
+        return get_dev_portfolio(db)
+
+    raise HTTPException(status_code=401, detail="Authentication required")
+
+
 def _clean_text(value: Optional[str], fallback: str = "") -> str:
     text = str(value or "").strip()
     return text or fallback
@@ -202,7 +225,7 @@ def _set_fcn_field_if_present(fcn: FCNPosition, field_name: str, value):
 
 @router.post("/stock")
 def add_stock(payload: StockInput, request: Request, db: Session = Depends(get_db)):
-    portfolio = get_request_portfolio(request, db)
+    portfolio = get_write_portfolio(request, db)
     if not portfolio:
         raise HTTPException(status_code=404, detail="No portfolio found")
 
@@ -233,7 +256,7 @@ def list_stocks(request: Request, db: Session = Depends(get_db)):
 
 @router.delete("/stock/{stock_id}")
 def delete_stock(stock_id: str, request: Request, db: Session = Depends(get_db)):
-    portfolio = get_request_portfolio(request, db)
+    portfolio = get_write_portfolio(request, db)
     if not portfolio:
         raise HTTPException(status_code=404, detail="No portfolio found")
 
@@ -257,7 +280,7 @@ def delete_stock(stock_id: str, request: Request, db: Session = Depends(get_db))
 
 @router.post("/crypto")
 def add_crypto(payload: CryptoInput, request: Request, db: Session = Depends(get_db)):
-    portfolio = get_request_portfolio(request, db)
+    portfolio = get_write_portfolio(request, db)
     if not portfolio:
         raise HTTPException(status_code=404, detail="No portfolio found")
 
@@ -292,7 +315,7 @@ def list_crypto(request: Request, db: Session = Depends(get_db)):
 
 @router.delete("/crypto/{crypto_id}")
 def delete_crypto(crypto_id: str, request: Request, db: Session = Depends(get_db)):
-    portfolio = get_request_portfolio(request, db)
+    portfolio = get_write_portfolio(request, db)
     if not portfolio:
         raise HTTPException(status_code=404, detail="No portfolio found")
 
@@ -316,7 +339,7 @@ def delete_crypto(crypto_id: str, request: Request, db: Session = Depends(get_db
 
 @router.post("/cash")
 def upsert_cash(payload: CashInput, request: Request, db: Session = Depends(get_db)):
-    portfolio = get_request_portfolio(request, db)
+    portfolio = get_write_portfolio(request, db)
     if not portfolio:
         raise HTTPException(status_code=404, detail="No portfolio found")
 
@@ -360,7 +383,7 @@ def list_cash(request: Request, db: Session = Depends(get_db)):
 
 @router.delete("/cash/{cash_id}")
 def delete_cash(cash_id: str, request: Request, db: Session = Depends(get_db)):
-    portfolio = get_request_portfolio(request, db)
+    portfolio = get_write_portfolio(request, db)
     if not portfolio:
         raise HTTPException(status_code=404, detail="No portfolio found")
 
@@ -384,7 +407,7 @@ def delete_cash(cash_id: str, request: Request, db: Session = Depends(get_db)):
 
 @router.post("/fcn")
 def add_fcn(payload: FCNInput, request: Request, db: Session = Depends(get_db)):
-    portfolio = get_request_portfolio(request, db)
+    portfolio = get_write_portfolio(request, db)
     if not portfolio:
         raise HTTPException(status_code=404, detail="No portfolio found")
 
@@ -445,7 +468,7 @@ def list_fcns(request: Request, db: Session = Depends(get_db)):
 
 @router.delete("/fcn/{fcn_id}")
 def delete_fcn(fcn_id: str, request: Request, db: Session = Depends(get_db)):
-    portfolio = get_request_portfolio(request, db)
+    portfolio = get_write_portfolio(request, db)
     if not portfolio:
         raise HTTPException(status_code=404, detail="No portfolio found")
 
