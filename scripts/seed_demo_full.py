@@ -1,5 +1,14 @@
 from datetime import datetime
+import json
+from pathlib import Path
+import sys
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from app.core.database import Base, engine, SessionLocal
+from app.core.security import get_password_hash
 from app.models.models import (
     User,
     Portfolio,
@@ -11,14 +20,19 @@ from app.models.models import (
 
 
 def get_or_create_user(db):
+    hashed_password = get_password_hash("demo")
     user = db.query(User).filter(User.email == "demo@ixai.local").first()
     if user:
-        print("✅ user exists")
+        user.hashed_password = hashed_password
+        user.is_active = True
+        db.commit()
+        db.refresh(user)
+        print("✅ user exists, password refreshed")
         return user
 
     user = User(
         email="demo@ixai.local",
-        hashed_password="dev-password-not-for-production",
+        hashed_password=hashed_password,
         is_active=True,
     )
     db.add(user)
@@ -109,7 +123,45 @@ def seed_fcns(db, portfolio):
             "fcn_code": "FCN219M",
             "notional": 30000,
             "notional_amount": 30000,
+            "underlyings": [
+                {
+                    "symbol": "MDB",
+                    "initial_price": 406.61,
+                    "current_price": 272.50,
+                    "ki_price": 264.30,
+                    "ko_price": 406.61,
+                    "distance_to_ki_pct": 3.0,
+                },
+                {
+                    "symbol": "AFRM",
+                    "initial_price": 78.00,
+                    "current_price": 55.10,
+                    "ki_price": 50.70,
+                    "ko_price": 78.00,
+                    "distance_to_ki_pct": 8.0,
+                },
+                {
+                    "symbol": "MRVL",
+                    "initial_price": 91.20,
+                    "current_price": 79.40,
+                    "ki_price": 59.28,
+                    "ko_price": 91.20,
+                    "distance_to_ki_pct": 25.3,
+                },
+                {
+                    "symbol": "TSLA",
+                    "initial_price": 400.00,
+                    "current_price": 285.00,
+                    "ki_price": 260.00,
+                    "ko_price": 400.00,
+                    "distance_to_ki_pct": 8.8,
+                },
+            ],
             "worst_of_symbol": "MDB",
+            "ki_level": 65.0,
+            "ko_level": 100.0,
+            "strike_level": 95.0,
+            "coupon_rate": 18.0,
             "distance_to_ki_pct": -8.5,
             "distance_to_ko_pct": 34.2,
             "risk_level": "high",
@@ -120,6 +172,10 @@ def seed_fcns(db, portfolio):
             "notional": 25000,
             "notional_amount": 25000,
             "worst_of_symbol": "TSLA",
+            "ki_level": 65.0,
+            "ko_level": 100.0,
+            "strike_level": 95.0,
+            "coupon_rate": 15.0,
             "distance_to_ki_pct": 18.4,
             "distance_to_ko_pct": 12.8,
             "risk_level": "medium",
@@ -134,7 +190,14 @@ def seed_fcns(db, portfolio):
                 fcn_code=item["fcn_code"],
                 notional=item["notional"],
                 notional_amount=item["notional_amount"],
+                underlyings=json.dumps(item.get("underlyings"), separators=(",", ":"))
+                if item.get("underlyings")
+                else None,
                 worst_of_symbol=item["worst_of_symbol"],
+                ki_level=item["ki_level"],
+                ko_level=item["ko_level"],
+                strike_level=item["strike_level"],
+                coupon_rate=item["coupon_rate"],
                 distance_to_ki_pct=item["distance_to_ki_pct"],
                 distance_to_ko_pct=item["distance_to_ko_pct"],
                 risk_level=item["risk_level"],

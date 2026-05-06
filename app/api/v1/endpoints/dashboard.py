@@ -8,7 +8,7 @@ from sqlalchemy import text
 from app.api.deps import get_current_user, get_owned_portfolio
 from app.core.database import get_db
 from app.models.models import CryptoPosition, FCNPosition, Portfolio, StockPosition, User
-from app.services.portfolio_service import build_portfolio_summary
+from app.services.portfolio_service import build_allocation_payload, build_portfolio_summary
 from app.services.push_state_service import should_send_push
 from app.services.telegram_push_service import send_telegram_message
 from app.services.action_service import calculate_stock_action
@@ -733,6 +733,50 @@ def get_my_summary(
         raise HTTPException(status_code=404, detail="Current user has no portfolio")
 
     return get_summary(portfolio=portfolio, db=db)
+
+
+@router.get("/my-asset-allocation")
+def get_my_asset_allocation(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    portfolio = db.query(Portfolio).filter(Portfolio.user_id == current_user.id).first()
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="Current user has no portfolio")
+
+    payload = build_allocation_payload(db, portfolio.id)
+    if not payload:
+        raise HTTPException(status_code=404, detail="Portfolio allocation not found")
+
+    return _sanitize_payload(payload)
+
+
+@router.get("/my-risk-overview")
+def get_my_risk_overview(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    portfolio = db.query(Portfolio).filter(Portfolio.user_id == current_user.id).first()
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="Current user has no portfolio")
+
+    payload = build_portfolio_summary(db, portfolio.id)
+    if not payload:
+        raise HTTPException(status_code=404, detail="Portfolio summary not found")
+
+    summary = apply_dashboard_v2_fields(db, portfolio, payload)
+
+    return _sanitize_payload({
+        "portfolio_id": summary.get("portfolio_id"),
+        "portfolio_name": summary.get("portfolio_name"),
+        "risk_level": summary.get("risk_level"),
+        "risk_score": summary.get("risk_score"),
+        "top_risk": summary.get("top_risk"),
+        "decision_cards": summary.get("decision_cards") or [],
+        "alerts": summary.get("alerts") or [],
+        "ai_advice": summary.get("ai_advice"),
+    })
+
 
 @router.get("/dev-summary")
 def get_dev_summary():

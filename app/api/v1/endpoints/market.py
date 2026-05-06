@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 import re
 from collections import Counter
@@ -114,18 +115,60 @@ def _extract_fcn_symbols(fcn: Any) -> list[str]:
     symbols: list[str] = []
     seen: set[str] = set()
     for value in raw_values:
-        if isinstance(value, (list, tuple, set)):
-            parts = value
-        else:
-            parts = re.split(r"[,/|;\s]+", str(value))
-
-        for part in parts:
+        for part in _fcn_symbol_parts(value):
             symbol = _clean_symbol(part)
             if symbol and symbol not in seen:
                 seen.add(symbol)
                 symbols.append(symbol)
 
     return symbols
+
+
+def _fcn_symbol_parts(value: Any) -> list[Any]:
+    decoded = _decode_fcn_underlyings(value)
+
+    if decoded is None:
+        return []
+
+    if isinstance(decoded, dict):
+        symbol = decoded.get("symbol") or decoded.get("ticker") or decoded.get("underlying_symbol")
+        if symbol:
+            return [symbol]
+
+        return list(decoded.keys())
+
+    if isinstance(decoded, (list, tuple, set)):
+        parts: list[Any] = []
+        for item in decoded:
+            if isinstance(item, dict):
+                symbol = item.get("symbol") or item.get("ticker") or item.get("underlying_symbol")
+                if symbol:
+                    parts.append(symbol)
+            else:
+                parts.extend(_fcn_symbol_parts(item))
+        return parts
+
+    return re.split(r"[,/|;\s]+", str(decoded))
+
+
+def _decode_fcn_underlyings(value: Any) -> Any:
+    if value is None:
+        return None
+
+    if not isinstance(value, str):
+        return value
+
+    text_value = value.strip()
+    if not text_value:
+        return None
+
+    if text_value[0] in "[{":
+        try:
+            return json.loads(text_value)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return text_value
+
+    return text_value
 
 
 @router.get("/price/{symbol}")

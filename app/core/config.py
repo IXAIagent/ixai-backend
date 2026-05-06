@@ -1,12 +1,11 @@
 import os
-import secrets
 
 from pydantic_settings import BaseSettings
 
 TELEGRAM_ENABLED = os.getenv("TELEGRAM_ENABLED", "false").lower() == "true"
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-_DEV_SECRET_KEY = secrets.token_urlsafe(32)
+_DEV_SECRET_KEY = "ixai-local-dev-secret-key-change-before-production"
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "IXAI Agent"
