@@ -13,6 +13,7 @@ from app.services.push_state_service import should_send_push
 from app.services.telegram_push_service import send_telegram_message
 from app.services.action_service import calculate_stock_action
 from app.services.fcn_monitor_service import FCNMonitorService
+from app.services.market_data.service import MarketDataService
 from app.services.risk_engine_v3 import build_risk_engine_v3
 from app.services.risk.portfolio_risk import calculate_portfolio_risk
 from app.services.risk.alert_engine import generate_risk_alert
@@ -246,6 +247,27 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def _safe_price(value: Any) -> float | None:
+    number = _safe_float(value, default=0.0)
+    if number > 0 and isfinite(number):
+        return number
+    return None
+
+
+def _live_price(
+    market_service: MarketDataService,
+    symbol: str,
+    asset_type: str,
+) -> tuple[float | None, str]:
+    try:
+        result = market_service.get_price(symbol, asset_type=asset_type)
+        price = _safe_price(getattr(result, "price", None))
+        source = str(getattr(result, "source", None) or "manual")
+        return price, source
+    except Exception:
+        return None, "manual"
+
+
 def _serialize_fcn_position(fcn: FCNPosition) -> dict[str, Any]:
     code = getattr(fcn, "fcn_code", None) or getattr(fcn, "name", None) or "FCN"
     return {
@@ -263,32 +285,45 @@ def _serialize_fcn_position(fcn: FCNPosition) -> dict[str, Any]:
     }
 
 
-def _serialize_stock_position(stock: StockPosition) -> dict[str, Any]:
+def _serialize_stock_position(
+    stock: StockPosition,
+    market_service: MarketDataService,
+) -> dict[str, Any]:
+    symbol = str(getattr(stock, "symbol", None) or "STOCK").upper()
     quantity = _safe_float(getattr(stock, "quantity", 0))
-    current_price = _safe_float(
-        getattr(stock, "current_price", None)
-        or getattr(stock, "avg_price", 0)
+    live_price, price_source = _live_price(market_service, symbol, "stock")
+    current_price = live_price or _safe_float(
+        getattr(stock, "current_price", None) or getattr(stock, "avg_price", 0)
     )
-    current_value = getattr(stock, "current_value", None)
+    stored_value = getattr(stock, "current_value", None)
+    current_value = quantity * current_price if current_price > 0 else stored_value
     if current_value is None:
-        current_value = quantity * current_price
+        current_value = 0
 
     return {
         "id": getattr(stock, "id", None),
-        "symbol": getattr(stock, "symbol", None) or "STOCK",
+        "symbol": symbol,
         "quantity": getattr(stock, "quantity", None),
         "avg_price": getattr(stock, "avg_price", None),
-        "current_price": getattr(stock, "current_price", None),
+        "current_price": current_price,
         "current_value": current_value,
+        "price_source": price_source if live_price else "stored",
     }
 
 
-def _serialize_crypto_position(crypto: CryptoPosition) -> dict[str, Any]:
+def _serialize_crypto_position(
+    crypto: CryptoPosition,
+    market_service: MarketDataService,
+) -> dict[str, Any]:
+    symbol = str(getattr(crypto, "symbol", None) or "CRYPTO").upper()
+    asset_type = getattr(crypto, "asset_type", None) or "crypto"
     quantity = _safe_float(getattr(crypto, "quantity", 0))
-    current_price = _safe_float(getattr(crypto, "current_price", 0))
-    current_value = getattr(crypto, "current_value", None)
+    live_price, price_source = _live_price(market_service, symbol, asset_type)
+    current_price = live_price or _safe_float(getattr(crypto, "current_price", 0))
+    stored_value = getattr(crypto, "current_value", None)
+    current_value = quantity * current_price if current_price > 0 else stored_value
     if current_value is None:
-        current_value = quantity * current_price
+        current_value = 0
 
     grid_lower = getattr(crypto, "grid_lower", None)
     grid_upper = getattr(crypto, "grid_upper", None)
@@ -298,12 +333,13 @@ def _serialize_crypto_position(crypto: CryptoPosition) -> dict[str, Any]:
 
     return {
         "id": getattr(crypto, "id", None),
-        "symbol": getattr(crypto, "symbol", None) or "CRYPTO",
-        "asset_type": getattr(crypto, "asset_type", None) or "crypto",
+        "symbol": symbol,
+        "asset_type": asset_type,
         "quantity": getattr(crypto, "quantity", None),
         "avg_price": getattr(crypto, "avg_price", None),
-        "current_price": getattr(crypto, "current_price", None),
+        "current_price": current_price,
         "current_value": current_value,
+        "price_source": price_source if live_price else "stored",
         "leverage": getattr(crypto, "leverage", None),
         "grid_lower": grid_lower,
         "grid_upper": grid_upper,
@@ -534,11 +570,16 @@ def apply_dashboard_v2_fields(db: Session, portfolio: Portfolio, payload: dict[s
     stocks = db.query(StockPosition).filter(StockPosition.portfolio_id == portfolio.id).all()
     fcns = db.query(FCNPosition).filter(FCNPosition.portfolio_id == portfolio.id).all()
     cryptos = db.query(CryptoPosition).filter(CryptoPosition.portfolio_id == portfolio.id).all()
+    market_service = MarketDataService()
 
-    payload["stock_positions"] = [_serialize_stock_position(stock) for stock in stocks]
+    payload["stock_positions"] = [
+        _serialize_stock_position(stock, market_service) for stock in stocks
+    ]
     payload["stocks"] = payload["stock_positions"]
     payload["fcn_positions"] = [_serialize_fcn_position(fcn) for fcn in fcns]
-    payload["crypto_positions"] = [_serialize_crypto_position(crypto) for crypto in cryptos]
+    payload["crypto_positions"] = [
+        _serialize_crypto_position(crypto, market_service) for crypto in cryptos
+    ]
     payload["cash_value"] = _safe_float(payload.get("cash_value"))
     _ensure_price_source_summary(payload)
 

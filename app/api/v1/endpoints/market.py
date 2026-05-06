@@ -180,6 +180,24 @@ def get_market_price(
     return result.to_dict()
 
 
+@router.get("/stock-price/{symbol}")
+def get_stock_price(symbol: str):
+    result = market_data_service.get_price(symbol, asset_type="stock")
+    return result.to_dict()
+
+
+@router.get("/fcn-underlying-price/{symbol}")
+def get_fcn_underlying_price(symbol: str):
+    result = market_data_service.get_price(symbol, asset_type="stock")
+    return result.to_dict()
+
+
+@router.get("/crypto-price/{symbol}")
+def get_crypto_price(symbol: str):
+    result = market_data_service.get_price(symbol, asset_type="crypto")
+    return result.to_dict()
+
+
 @router.post("/refresh-prices")
 def refresh_prices(request: Request, db: Session = Depends(get_db)):
     updated_symbols: list[str] = []
