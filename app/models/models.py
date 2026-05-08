@@ -1,7 +1,7 @@
 from datetime import datetime
 import uuid
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -38,6 +38,7 @@ class Portfolio(Base):
     crypto_positions = relationship("CryptoPosition", back_populates="portfolio", cascade="all, delete-orphan")
     cash_positions = relationship("CashPosition", back_populates="portfolio", cascade="all, delete-orphan")
     alerts = relationship("Alert", back_populates="portfolio", cascade="all, delete-orphan")
+    import_batches = relationship("ImportBatch", back_populates="portfolio", cascade="all, delete-orphan")
 
 
 class StockPosition(Base):
@@ -133,3 +134,39 @@ class Alert(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     portfolio = relationship("Portfolio", back_populates="alerts")
+
+
+class ImportBatch(Base):
+    __tablename__ = "import_batches"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.id"), index=True, nullable=False)
+    portfolio_id = Column(String, ForeignKey("portfolios.id"), index=True, nullable=False)
+    import_type = Column(String, default="portfolio_csv", nullable=False)
+    file_name = Column(String, nullable=True)
+    imported = Column(Integer, default=0, nullable=False)
+    updated = Column(Integer, default=0, nullable=False)
+    skipped = Column(Integer, default=0, nullable=False)
+    errors_count = Column(Integer, default=0, nullable=False)
+    status = Column(String, default="completed", nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True, nullable=False)
+
+    portfolio = relationship("Portfolio", back_populates="import_batches")
+    rows = relationship("ImportRow", back_populates="batch", cascade="all, delete-orphan")
+
+
+class ImportRow(Base):
+    __tablename__ = "import_rows"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    batch_id = Column(String, ForeignKey("import_batches.id"), index=True, nullable=False)
+    row_number = Column(Integer, index=True, nullable=False)
+    asset_type = Column(String, nullable=True)
+    input_symbol = Column(String, nullable=True)
+    canonical_symbol = Column(String, nullable=True)
+    action = Column(String, nullable=True)
+    status = Column(String, index=True, nullable=False)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    batch = relationship("ImportBatch", back_populates="rows")
