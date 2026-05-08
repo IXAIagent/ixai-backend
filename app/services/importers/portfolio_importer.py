@@ -3,8 +3,8 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.models.models import CashPosition, CryptoPosition, Portfolio, StockPosition
-from app.services.importers.types import ImportResult, NormalizedImportPosition
-from app.services.normalization import normalize_asset_symbol
+from app.services.importers.types import ImportPreviewResult, ImportPreviewRow, ImportResult, NormalizedImportPosition
+from app.services.normalization import detect_currency, get_asset_display_name, normalize_asset_symbol
 from app.services.resolver import resolve_asset
 
 
@@ -32,6 +32,34 @@ def import_positions_batch(
             result.add_error(position.row, f"import failed: {exc.__class__.__name__}")
 
     db.commit()
+    return result
+
+
+def preview_positions_batch(
+    db: Session,
+    portfolio: Portfolio | None,
+    rows: list[dict[str, str]],
+) -> ImportPreviewResult:
+    result = ImportPreviewResult()
+
+    for row in rows:
+        position = normalize_imported_position(row)
+        if isinstance(position, str):
+            result.rows.append(
+                ImportPreviewRow(
+                    row=_row_number(row),
+                    asset_type=_clean(row.get("asset_type")).lower() or None,
+                    input_symbol=_clean(row.get("symbol")) or None,
+                    canonical_symbol=None,
+                    display_name=None,
+                    action="skip",
+                    errors=[position],
+                )
+            )
+            continue
+
+        result.rows.append(_preview_row(db, portfolio, position))
+
     return result
 
 
@@ -105,6 +133,97 @@ def import_position_to_portfolio(
         return _upsert_cash(db, portfolio, position)
 
     raise ValueError(f"unsupported asset_type {position.asset_type}")
+
+
+def _preview_row(
+    db: Session,
+    portfolio: Portfolio | None,
+    position: NormalizedImportPosition,
+) -> ImportPreviewRow:
+    exists = False
+    if portfolio:
+        exists = _position_exists(db, portfolio, position)
+
+    return ImportPreviewRow(
+        row=position.row,
+        asset_type=position.asset_type,
+        input_symbol=position.raw.get("symbol") or None,
+        canonical_symbol=position.symbol,
+        display_name=_display_name(position),
+        action="update" if exists else "import",
+        quantity=position.quantity,
+        avg_price=position.avg_price,
+        current_price=position.current_price,
+        currency=position.currency or _currency_for_position(position),
+        amount=position.amount,
+        errors=[],
+    )
+
+
+def _position_exists(
+    db: Session,
+    portfolio: Portfolio,
+    position: NormalizedImportPosition,
+) -> bool:
+    if position.asset_type == "stock":
+        return (
+            db.query(StockPosition)
+            .filter(
+                StockPosition.portfolio_id == portfolio.id,
+                StockPosition.symbol == position.symbol,
+            )
+            .first()
+            is not None
+        )
+
+    if position.asset_type == "crypto":
+        return (
+            db.query(CryptoPosition)
+            .filter(
+                CryptoPosition.portfolio_id == portfolio.id,
+                CryptoPosition.symbol == position.symbol,
+                CryptoPosition.asset_type == "crypto",
+            )
+            .first()
+            is not None
+        )
+
+    if position.asset_type == "cash":
+        return (
+            db.query(CashPosition)
+            .filter(
+                CashPosition.portfolio_id == portfolio.id,
+                CashPosition.currency == position.currency,
+            )
+            .first()
+            is not None
+        )
+
+    return False
+
+
+def _display_name(position: NormalizedImportPosition) -> str | None:
+    if position.asset_type == "cash":
+        return position.currency
+
+    input_symbol = position.raw.get("symbol") or position.symbol or ""
+    resolved = resolve_asset(input_symbol, position.asset_type)
+    display_name = resolved.get("display_name")
+    if display_name:
+        return str(display_name)
+
+    if position.symbol:
+        return get_asset_display_name(position.symbol, position.asset_type)
+
+    return None
+
+
+def _currency_for_position(position: NormalizedImportPosition) -> str | None:
+    if position.asset_type == "cash":
+        return position.currency
+    if position.symbol:
+        return detect_currency(position.symbol)
+    return None
 
 
 def _upsert_stock(db: Session, portfolio: Portfolio, position: NormalizedImportPosition) -> bool:

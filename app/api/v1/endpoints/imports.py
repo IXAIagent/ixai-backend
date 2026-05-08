@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.models.models import Portfolio, User
-from app.services.importers import import_positions_batch, parse_portfolio_csv
+from app.services.importers import import_positions_batch, parse_portfolio_csv, preview_positions_batch
 
 router = APIRouter()
 
@@ -42,12 +42,67 @@ async def import_portfolio_csv(
     return result.to_dict()
 
 
+@router.post("/portfolio-csv/preview")
+async def preview_portfolio_csv(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _validate_csv_file(file)
+
+    content = await file.read(MAX_CSV_SIZE_BYTES + 1)
+    if len(content) > MAX_CSV_SIZE_BYTES:
+        raise HTTPException(status_code=413, detail="CSV file is too large")
+
+    rows, parse_errors = parse_portfolio_csv(content)
+    if parse_errors:
+        return {
+            "status": "preview",
+            "rows": [
+                {
+                    "row": error.row,
+                    "asset_type": None,
+                    "input_symbol": None,
+                    "canonical_symbol": None,
+                    "display_name": None,
+                    "action": "skip",
+                    "quantity": None,
+                    "avg_price": None,
+                    "current_price": None,
+                    "currency": None,
+                    "amount": None,
+                    "errors": [error.error],
+                }
+                for error in parse_errors
+            ],
+            "summary": {
+                "will_import": 0,
+                "will_update": 0,
+                "will_skip": len(parse_errors),
+                "errors": len(parse_errors),
+            },
+        }
+
+    portfolio = _get_user_portfolio(db, current_user)
+    result = preview_positions_batch(db, portfolio, rows)
+    return result.to_dict()
+
+
 def _validate_csv_file(file: UploadFile) -> None:
     filename = str(file.filename or "").lower()
     content_type = str(file.content_type or "").lower()
 
     if not filename.endswith(".csv") and content_type not in CSV_CONTENT_TYPES:
         raise HTTPException(status_code=400, detail="Only CSV files are supported")
+
+
+def _get_user_portfolio(db: Session, user: User) -> Portfolio | None:
+    return (
+        db.query(Portfolio)
+        .filter(Portfolio.user_id == user.id)
+        .order_by(Portfolio.created_at.asc())
+        .first()
+    )
 
 
 def _get_or_create_user_portfolio(db: Session, user: User) -> Portfolio:
