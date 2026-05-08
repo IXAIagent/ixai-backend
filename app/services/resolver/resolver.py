@@ -6,6 +6,7 @@ from app.services.resolver.candidates import (
     fallback_candidate,
     normalize_asset_type,
     stock_candidates,
+    yahoo_search_stock_candidates,
 )
 
 
@@ -69,6 +70,9 @@ def resolve_asset_candidates(input_text: str, asset_type: str | None = None) -> 
         candidates.extend(stock_candidates(query))
         candidates.extend(crypto_candidates(query))
 
+    if not candidates and normalized_type != "crypto":
+        candidates.extend(yahoo_search_stock_candidates(query))
+
     if not candidates:
         fallback = fallback_candidate(query, normalized_type)
         if fallback:
@@ -93,6 +97,7 @@ def resolve_asset(input_text: str, asset_type: str | None = None) -> dict:
     second_confidence = float(candidates[1].get("confidence", 0))
     if top_confidence >= 0.95 and top_confidence > second_confidence:
         return _resolved_result(query, top, candidates=[])
+    if top_confidence >= 0.8 and top_confidence - second_confidence >= 0.1:
+        return _resolved_result(query, top, candidates=[])
 
     return _ambiguous_result(query, asset_type, candidates)
-

@@ -15,6 +15,7 @@ from app.services.action_service import calculate_stock_action
 from app.services.fcn_monitor_service import FCNMonitorService
 from app.services.market_data.service import MarketDataService
 from app.services.normalization import get_asset_display_name
+from app.services.resolver import resolve_asset
 from app.services.risk_engine_v3 import build_risk_engine_v3
 from app.services.risk.portfolio_risk import calculate_portfolio_risk
 from app.services.risk.alert_engine import generate_risk_alert
@@ -301,10 +302,20 @@ def _serialize_stock_position(
     if current_value is None:
         current_value = 0
 
+    display_name = get_asset_display_name(symbol, "stock")
+    if display_name == symbol:
+        try:
+            resolved = resolve_asset(symbol, "stock")
+            resolved_display = resolved.get("display_name")
+            if resolved_display and resolved.get("canonical_symbol"):
+                display_name = f"{resolved_display} {resolved['canonical_symbol']}"
+        except Exception:
+            display_name = symbol
+
     return {
         "id": getattr(stock, "id", None),
         "symbol": symbol,
-        "display_name": get_asset_display_name(symbol, "stock"),
+        "display_name": display_name,
         "quantity": getattr(stock, "quantity", None),
         "avg_price": getattr(stock, "avg_price", None),
         "current_price": current_price,

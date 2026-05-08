@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote as url_quote
 
 import requests
 
@@ -14,6 +15,8 @@ except Exception:
 
 class YahooFinanceProvider(MarketDataProvider):
     QUOTE_URL = "https://query1.finance.yahoo.com/v7/finance/quote"
+    SEARCH_URL = "https://query2.finance.yahoo.com/v1/finance/search"
+    TW_AUTOCOMPLETE_URL = "https://tw.stock.yahoo.com/_td-stock/api/resource/AutocompleteService"
 
     def get_price(self, symbol: str) -> MarketPriceResult:
         normalized_symbol = self._normalize_symbol(symbol)
@@ -100,6 +103,114 @@ class YahooFinanceProvider(MarketDataProvider):
             return None, f"Yahoo quote API returned no usable price for symbol: {symbol}"
         except Exception as exc:
             return None, f"Yahoo quote API failed: {exc}"
+
+    def search(self, query: str, limit: int = 8) -> list[dict[str, Any]]:
+        text = str(query or "").strip()
+        if not text:
+            return []
+
+        if self._looks_like_taiwan_query(text):
+            results = self._search_tw_autocomplete(text, limit)
+            if results:
+                return results
+
+        results = self._search_finance_api(text, limit)
+        if results:
+            return results
+
+        return self._search_tw_autocomplete(text, limit)
+
+    def _looks_like_taiwan_query(self, query: str) -> bool:
+        text = query.strip().upper()
+        base_symbol = text.removesuffix(".TW").removesuffix(".TWO")
+        return (
+            any(ord(char) > 127 for char in text)
+            or text.endswith((".TW", ".TWO"))
+            or (base_symbol.isdigit() and len(base_symbol) == 4)
+        )
+
+    def _search_finance_api(self, query: str, limit: int) -> list[dict[str, Any]]:
+        try:
+            response = requests.get(
+                self.SEARCH_URL,
+                params={
+                    "q": query,
+                    "quotesCount": limit,
+                    "newsCount": 0,
+                    "enableFuzzyQuery": "true",
+                    "lang": "zh-TW",
+                    "region": "TW",
+                },
+                headers={"User-Agent": "IXAI-Agent/1.0"},
+                timeout=8,
+            )
+            response.raise_for_status()
+            data = response.json()
+        except Exception:
+            return []
+
+        quotes = data.get("quotes", [])
+        if not isinstance(quotes, list):
+            return []
+
+        results: list[dict[str, Any]] = []
+        for quote in quotes[:limit]:
+            if not isinstance(quote, dict):
+                continue
+
+            symbol = str(quote.get("symbol") or "").strip().upper()
+            if not symbol:
+                continue
+
+            results.append(
+                {
+                    "symbol": symbol,
+                    "shortname": quote.get("shortname"),
+                    "longname": quote.get("longname"),
+                    "exchange": quote.get("exchange"),
+                    "quoteType": quote.get("quoteType"),
+                }
+            )
+
+        return results
+
+    def _search_tw_autocomplete(self, query: str, limit: int) -> list[dict[str, Any]]:
+        try:
+            encoded_query = url_quote(query)
+            response = requests.get(
+                f"{self.TW_AUTOCOMPLETE_URL};query={encoded_query}",
+                headers={"User-Agent": "IXAI-Agent/1.0"},
+                timeout=8,
+            )
+            response.raise_for_status()
+            data = response.json()
+        except Exception:
+            return []
+
+        quotes = data.get("ResultSet", {}).get("Result", [])
+        if not isinstance(quotes, list):
+            return []
+
+        results: list[dict[str, Any]] = []
+        for quote in quotes[:limit]:
+            if not isinstance(quote, dict):
+                continue
+
+            symbol = str(quote.get("symbol") or "").strip().upper()
+            if not symbol:
+                continue
+
+            results.append(
+                {
+                    "symbol": symbol,
+                    "shortname": quote.get("name"),
+                    "longname": quote.get("name"),
+                    "exchange": quote.get("exch"),
+                    "quoteType": "EQUITY" if quote.get("type") == "S" else quote.get("type"),
+                }
+            )
+
+        return results
 
     def _error_result(self, symbol: str, error: str) -> MarketPriceResult:
         return MarketPriceResult(

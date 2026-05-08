@@ -8,6 +8,7 @@ from app.services.normalization import (
 )
 from app.services.normalization.crypto_master import CRYPTO_ASSETS
 from app.services.normalization.tw_stock_master import TW_STOCKS
+from app.services.market_data.yahoo_provider import YahooFinanceProvider
 
 
 def clean_query(value: str | None) -> str:
@@ -100,6 +101,66 @@ def crypto_candidates(query: str) -> list[dict]:
     return dedupe_candidates(candidates)
 
 
+def yahoo_search_stock_candidates(query: str) -> list[dict]:
+    normalized_query = clean_query(query)
+    if not normalized_query:
+        return []
+
+    provider = YahooFinanceProvider()
+    quotes = provider.search(query)
+    candidates: list[dict] = []
+
+    for quote in quotes:
+        symbol = clean_query(quote.get("symbol"))
+        quote_type = clean_query(quote.get("quoteType"))
+        if not symbol or quote_type not in {"EQUITY", "ETF"}:
+            continue
+
+        if symbol.endswith(".TW") or symbol.endswith(".TWO"):
+            market = "TWSE"
+            currency = "TWD"
+            confidence = 0.82
+        elif "." not in symbol:
+            market = "US"
+            currency = "USD"
+            confidence = 0.72
+        else:
+            continue
+
+        display_name = (
+            str(quote.get("shortname") or quote.get("longname") or symbol)
+            .strip()
+        )
+        canonical_symbol = normalize_stock_symbol(symbol)
+        base_symbol = canonical_symbol.split(".", 1)[0]
+        is_tw_common_stock = base_symbol.isdigit() and len(base_symbol) == 4
+        exact_name_match = clean_query(display_name) == normalized_query
+
+        if is_tw_common_stock and exact_name_match:
+            confidence = 0.85
+        elif is_tw_common_stock:
+            confidence = 0.78
+        elif exact_name_match:
+            confidence = 0.72
+        else:
+            confidence = 0.62
+
+        candidates.append(
+            {
+                "canonical_symbol": canonical_symbol,
+                "display_name": display_name or canonical_symbol,
+                "asset_type": "stock",
+                "market": market,
+                "currency": currency,
+                "confidence": confidence,
+                "match_type": "fallback",
+                "source": "yahoo_search",
+            }
+        )
+
+    return dedupe_candidates(candidates)
+
+
 def fallback_candidate(query: str, asset_type: str | None) -> dict | None:
     normalized_type = normalize_asset_type(asset_type)
     normalized_query = clean_query(query)
@@ -152,4 +213,3 @@ def dedupe_candidates(candidates: list[dict]) -> list[dict]:
         key=lambda item: float(item.get("confidence", 0)),
         reverse=True,
     )
-
