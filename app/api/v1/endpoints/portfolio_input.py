@@ -22,6 +22,12 @@ class StockInput(BaseModel):
     current_price: float
 
 
+class StockUpdateInput(BaseModel):
+    quantity: Optional[float] = None
+    avg_price: Optional[float] = None
+    current_price: Optional[float] = None
+
+
 class CryptoInput(BaseModel):
     symbol: str
     asset_type: Optional[str] = "crypto"
@@ -33,9 +39,22 @@ class CryptoInput(BaseModel):
     grid_upper: Optional[float] = None
 
 
+class CryptoUpdateInput(BaseModel):
+    quantity: Optional[float] = None
+    avg_price: Optional[float] = None
+    current_price: Optional[float] = None
+    leverage: Optional[float] = None
+    grid_lower: Optional[float] = None
+    grid_upper: Optional[float] = None
+
+
 class CashInput(BaseModel):
     currency: Optional[str] = "USD"
     amount: float
+
+
+class CashUpdateInput(BaseModel):
+    amount: Optional[float] = None
 
 
 class FCNInput(BaseModel):
@@ -224,6 +243,12 @@ def _set_fcn_field_if_present(fcn: FCNPosition, field_name: str, value):
         setattr(fcn, field_name, value)
 
 
+def _calculate_current_value(quantity: Optional[float], current_price: Optional[float]) -> Optional[float]:
+    if quantity is None or current_price is None:
+        return None
+    return quantity * current_price
+
+
 @router.post("/stock")
 def add_stock(payload: StockInput, request: Request, db: Session = Depends(get_db)):
     portfolio = get_write_portfolio(request, db)
@@ -253,6 +278,38 @@ def list_stocks(request: Request, db: Session = Depends(get_db)):
         return []
 
     return portfolio.stocks
+
+
+@router.patch("/stock/{stock_id}")
+def update_stock(stock_id: str, payload: StockUpdateInput, request: Request, db: Session = Depends(get_db)):
+    portfolio = get_write_portfolio(request, db)
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="No portfolio found")
+
+    stock = (
+        db.query(StockPosition)
+        .filter(
+            StockPosition.id == stock_id,
+            StockPosition.portfolio_id == portfolio.id,
+        )
+        .first()
+    )
+
+    if not stock:
+        raise HTTPException(status_code=404, detail="Stock not found")
+
+    if payload.quantity is not None:
+        stock.quantity = payload.quantity
+    if payload.avg_price is not None:
+        stock.avg_price = payload.avg_price
+    if payload.current_price is not None:
+        stock.current_price = payload.current_price
+
+    stock.current_value = _calculate_current_value(stock.quantity, stock.current_price)
+    db.commit()
+    db.refresh(stock)
+
+    return {"status": "ok", "message": "Stock updated", "id": stock.id}
 
 
 @router.delete("/stock/{stock_id}")
@@ -312,6 +369,44 @@ def list_crypto(request: Request, db: Session = Depends(get_db)):
         return []
 
     return portfolio.crypto_positions
+
+
+@router.patch("/crypto/{crypto_id}")
+def update_crypto(crypto_id: str, payload: CryptoUpdateInput, request: Request, db: Session = Depends(get_db)):
+    portfolio = get_write_portfolio(request, db)
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="No portfolio found")
+
+    crypto = (
+        db.query(CryptoPosition)
+        .filter(
+            CryptoPosition.id == crypto_id,
+            CryptoPosition.portfolio_id == portfolio.id,
+        )
+        .first()
+    )
+
+    if not crypto:
+        raise HTTPException(status_code=404, detail="Crypto position not found")
+
+    if payload.quantity is not None:
+        crypto.quantity = payload.quantity
+    if payload.avg_price is not None:
+        crypto.avg_price = payload.avg_price
+    if payload.current_price is not None:
+        crypto.current_price = payload.current_price
+    if payload.leverage is not None:
+        crypto.leverage = payload.leverage
+    if payload.grid_lower is not None:
+        crypto.grid_lower = payload.grid_lower
+    if payload.grid_upper is not None:
+        crypto.grid_upper = payload.grid_upper
+
+    crypto.current_value = _calculate_current_value(crypto.quantity, crypto.current_price)
+    db.commit()
+    db.refresh(crypto)
+
+    return {"status": "ok", "message": "Crypto updated", "id": crypto.id}
 
 
 @router.delete("/crypto/{crypto_id}")
@@ -380,6 +475,35 @@ def list_cash(request: Request, db: Session = Depends(get_db)):
         return []
 
     return portfolio.cash_positions
+
+
+@router.patch("/cash/{cash_id}")
+def update_cash(cash_id: str, payload: CashUpdateInput, request: Request, db: Session = Depends(get_db)):
+    portfolio = get_write_portfolio(request, db)
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="No portfolio found")
+
+    cash = (
+        db.query(CashPosition)
+        .filter(
+            CashPosition.id == cash_id,
+            CashPosition.portfolio_id == portfolio.id,
+        )
+        .first()
+    )
+
+    if not cash:
+        raise HTTPException(status_code=404, detail="Cash position not found")
+
+    if payload.amount is not None:
+        if payload.amount < 0:
+            raise HTTPException(status_code=400, detail="Cash amount must be positive")
+        cash.amount = payload.amount
+
+    db.commit()
+    db.refresh(cash)
+
+    return {"status": "ok", "message": "Cash updated", "id": cash.id}
 
 
 @router.delete("/cash/{cash_id}")
