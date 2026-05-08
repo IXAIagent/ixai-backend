@@ -12,6 +12,17 @@ SymbolType = Literal["crypto", "stock"]
 class MarketDataService:
     DEFAULT_CRYPTO_QUOTE = "USDT"
 
+    TAIWAN_STOCK_SYMBOLS = {
+        "2330": "2330.TW",
+        "2330.TW": "2330.TW",
+        "台積電": "2330.TW",
+        "TSMC": "2330.TW",
+        "2454": "2454.TW",
+        "2454.TW": "2454.TW",
+        "聯發科": "2454.TW",
+        "MEDIATEK": "2454.TW",
+    }
+
     CRYPTO_ASSET_TYPES = {"crypto", "grid", "dual"}
     CRYPTO_SYMBOLS = {
         "BTC",
@@ -189,4 +200,15 @@ class MarketDataService:
         )
 
     def _normalize_symbol(self, symbol: str) -> str:
-        return str(symbol or "").strip().upper()
+        normalized_symbol = str(symbol or "").strip().upper()
+        if not normalized_symbol:
+            return normalized_symbol
+
+        mapped_symbol = self.TAIWAN_STOCK_SYMBOLS.get(normalized_symbol)
+        if mapped_symbol:
+            return mapped_symbol
+
+        if normalized_symbol.isdigit() and len(normalized_symbol) == 4:
+            return f"{normalized_symbol}.TW"
+
+        return normalized_symbol

@@ -13,6 +13,17 @@ from app.models.models import CashPosition, CryptoPosition, FCNPosition, Portfol
 
 router = APIRouter()
 
+TAIWAN_STOCK_SYMBOLS = {
+    "2330": "2330.TW",
+    "2330.TW": "2330.TW",
+    "台積電": "2330.TW",
+    "TSMC": "2330.TW",
+    "2454": "2454.TW",
+    "2454.TW": "2454.TW",
+    "聯發科": "2454.TW",
+    "MEDIATEK": "2454.TW",
+}
+
 
 class StockInput(BaseModel):
     symbol: str
@@ -174,6 +185,21 @@ def _clean_symbol(value: Optional[str], fallback: str = "") -> str:
     return _clean_text(value, fallback).upper()
 
 
+def normalize_stock_symbol(value: Optional[str]) -> str:
+    text = _clean_text(value).upper()
+    if not text:
+        return text
+
+    mapped_symbol = TAIWAN_STOCK_SYMBOLS.get(text)
+    if mapped_symbol:
+        return mapped_symbol
+
+    if text.isdigit() and len(text) == 4:
+        return f"{text}.TW"
+
+    return text
+
+
 def _distance_to_barrier_pct(
     initial_price: Optional[float],
     current_price: Optional[float],
@@ -231,7 +257,7 @@ def add_stock(payload: StockInput, request: Request, db: Session = Depends(get_d
 
     stock = StockPosition(
         portfolio_id=portfolio.id,
-        symbol=payload.symbol.upper(),
+        symbol=normalize_stock_symbol(payload.symbol),
         quantity=payload.quantity,
         avg_price=payload.avg_price,
         current_price=payload.current_price,
