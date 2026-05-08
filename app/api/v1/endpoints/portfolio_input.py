@@ -10,19 +10,9 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import decode_access_token, get_password_hash
 from app.models.models import CashPosition, CryptoPosition, FCNPosition, Portfolio, StockPosition, User
+from app.services.normalization import normalize_stock_symbol
 
 router = APIRouter()
-
-TAIWAN_STOCK_SYMBOLS = {
-    "2330": "2330.TW",
-    "2330.TW": "2330.TW",
-    "台積電": "2330.TW",
-    "TSMC": "2330.TW",
-    "2454": "2454.TW",
-    "2454.TW": "2454.TW",
-    "聯發科": "2454.TW",
-    "MEDIATEK": "2454.TW",
-}
 
 
 class StockInput(BaseModel):
@@ -183,21 +173,6 @@ def _clean_text(value: Optional[str], fallback: str = "") -> str:
 
 def _clean_symbol(value: Optional[str], fallback: str = "") -> str:
     return _clean_text(value, fallback).upper()
-
-
-def normalize_stock_symbol(value: Optional[str]) -> str:
-    text = _clean_text(value).upper()
-    if not text:
-        return text
-
-    mapped_symbol = TAIWAN_STOCK_SYMBOLS.get(text)
-    if mapped_symbol:
-        return mapped_symbol
-
-    if text.isdigit() and len(text) == 4:
-        return f"{text}.TW"
-
-    return text
 
 
 def _distance_to_barrier_pct(

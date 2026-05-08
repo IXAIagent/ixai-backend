@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from app.services.market_data.service import MarketDataService
+from app.services.normalization import normalize_asset_symbol
 
 
 class FCNMonitorService:
@@ -379,7 +380,7 @@ class FCNMonitorService:
         return self._safe_float(value)
 
     def _clean_symbol_value(self, value: Any) -> str:
-        symbol = str(value or "").strip().upper()
+        symbol = normalize_asset_symbol(str(value or "").strip(), "stock")
         return re.sub(r"[^A-Z0-9.\-^=]", "", symbol)
 
     def _add_warning(self, result: dict[str, Any], warning: str) -> None:

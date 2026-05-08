@@ -14,6 +14,7 @@ from app.services.telegram_push_service import send_telegram_message
 from app.services.action_service import calculate_stock_action
 from app.services.fcn_monitor_service import FCNMonitorService
 from app.services.market_data.service import MarketDataService
+from app.services.normalization import get_asset_display_name
 from app.services.risk_engine_v3 import build_risk_engine_v3
 from app.services.risk.portfolio_risk import calculate_portfolio_risk
 from app.services.risk.alert_engine import generate_risk_alert
@@ -303,6 +304,7 @@ def _serialize_stock_position(
     return {
         "id": getattr(stock, "id", None),
         "symbol": symbol,
+        "display_name": get_asset_display_name(symbol, "stock"),
         "quantity": getattr(stock, "quantity", None),
         "avg_price": getattr(stock, "avg_price", None),
         "current_price": current_price,
@@ -334,6 +336,7 @@ def _serialize_crypto_position(
     return {
         "id": getattr(crypto, "id", None),
         "symbol": symbol,
+        "display_name": get_asset_display_name(symbol, asset_type),
         "asset_type": asset_type,
         "quantity": getattr(crypto, "quantity", None),
         "avg_price": getattr(crypto, "avg_price", None),

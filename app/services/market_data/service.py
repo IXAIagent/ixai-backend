@@ -5,23 +5,17 @@ from typing import Literal
 from app.services.market_data.base import MarketPriceResult, utc_now_iso
 from app.services.market_data.binance_provider import BinanceProvider
 from app.services.market_data.yahoo_provider import YahooFinanceProvider
+from app.services.normalization import (
+    get_crypto_yahoo_fallback_symbol,
+    normalize_crypto_symbol,
+    normalize_stock_symbol,
+)
 
 SymbolType = Literal["crypto", "stock"]
 
 
 class MarketDataService:
     DEFAULT_CRYPTO_QUOTE = "USDT"
-
-    TAIWAN_STOCK_SYMBOLS = {
-        "2330": "2330.TW",
-        "2330.TW": "2330.TW",
-        "台積電": "2330.TW",
-        "TSMC": "2330.TW",
-        "2454": "2454.TW",
-        "2454.TW": "2454.TW",
-        "聯發科": "2454.TW",
-        "MEDIATEK": "2454.TW",
-    }
 
     CRYPTO_ASSET_TYPES = {"crypto", "grid", "dual"}
     CRYPTO_SYMBOLS = {
@@ -69,19 +63,29 @@ class MarketDataService:
         symbol: str,
         asset_type: str | None = None,
     ) -> MarketPriceResult:
-        normalized_symbol = self._normalize_symbol(symbol)
+        normalized_symbol = self._normalize_symbol(symbol, asset_type=asset_type)
         if not normalized_symbol:
             return self._manual_result("", "Symbol is required")
 
         if self._should_use_binance(normalized_symbol, asset_type):
             provider_symbol = self._to_binance_symbol(normalized_symbol)
-            return self._with_manual_fallback(
-                provider_result=self._safe_provider_get(
-                    self.binance_provider,
-                    provider_symbol,
-                ),
-                symbol=provider_symbol,
+            provider_result = self._safe_provider_get(
+                self.binance_provider,
+                provider_symbol,
             )
+            if provider_result.price is not None:
+                return provider_result
+
+            yahoo_symbol = get_crypto_yahoo_fallback_symbol(provider_symbol)
+            if yahoo_symbol:
+                yahoo_result = self._safe_provider_get(
+                    self.yahoo_provider,
+                    yahoo_symbol,
+                )
+                if yahoo_result.price is not None:
+                    return yahoo_result
+
+            return self._with_manual_fallback(provider_result, provider_symbol)
 
         return self._with_manual_fallback(
             provider_result=self._safe_provider_get(
@@ -103,7 +107,7 @@ class MarketDataService:
         symbol: str,
         asset_type: str | None = None,
     ) -> SymbolType:
-        normalized_symbol = self._normalize_symbol(symbol)
+        normalized_symbol = self._normalize_symbol(symbol, asset_type=asset_type)
         return "crypto" if self._should_use_binance(normalized_symbol, asset_type) else "stock"
 
     def _should_use_binance(self, symbol: str, asset_type: str | None) -> bool:
@@ -131,16 +135,7 @@ class MarketDataService:
         )
 
     def _to_binance_symbol(self, symbol: str) -> str:
-        normalized_symbol = self._normalize_symbol(symbol)
-
-        if normalized_symbol.endswith(self.DEFAULT_CRYPTO_QUOTE):
-            return normalized_symbol
-
-        if normalized_symbol.endswith("-USD"):
-            base_symbol = normalized_symbol.removesuffix("-USD")
-            return f"{base_symbol}{self.DEFAULT_CRYPTO_QUOTE}"
-
-        return f"{normalized_symbol}{self.DEFAULT_CRYPTO_QUOTE}"
+        return normalize_crypto_symbol(symbol)
 
     def _safe_provider_get(self, provider, symbol: str) -> MarketPriceResult:
         try:
@@ -199,16 +194,7 @@ class MarketDataService:
             error=error,
         )
 
-    def _normalize_symbol(self, symbol: str) -> str:
-        normalized_symbol = str(symbol or "").strip().upper()
-        if not normalized_symbol:
-            return normalized_symbol
-
-        mapped_symbol = self.TAIWAN_STOCK_SYMBOLS.get(normalized_symbol)
-        if mapped_symbol:
-            return mapped_symbol
-
-        if normalized_symbol.isdigit() and len(normalized_symbol) == 4:
-            return f"{normalized_symbol}.TW"
-
-        return normalized_symbol
+    def _normalize_symbol(self, symbol: str, asset_type: str | None = None) -> str:
+        if str(asset_type or "").strip().lower() in self.CRYPTO_ASSET_TYPES:
+            return normalize_crypto_symbol(symbol)
+        return normalize_stock_symbol(symbol)
