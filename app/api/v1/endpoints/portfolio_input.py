@@ -1,12 +1,11 @@
 import json
-import os
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.core.config import is_development_env
 from app.core.database import get_db
 from app.core.security import decode_access_token, get_password_hash
 from app.models.models import CashPosition, CryptoPosition, FCNPosition, Portfolio, StockPosition, User
@@ -161,17 +160,10 @@ def get_request_portfolio(request: Request, db: Session):
     if user:
         return get_or_create_user_portfolio(db, user)
 
-    return get_dev_portfolio(db)
+    if is_development_env():
+        return get_dev_portfolio(db)
 
-
-def is_development_env() -> bool:
-    env = (
-        os.getenv("APP_ENV")
-        or os.getenv("ENV")
-        or getattr(settings, "ENVIRONMENT", "")
-        or ""
-    )
-    return env.strip().lower() in {"", "dev", "development", "local"}
+    raise HTTPException(status_code=401, detail="Authentication required")
 
 
 def get_write_portfolio(request: Request, db: Session):

@@ -6,6 +6,26 @@ TELEGRAM_ENABLED = os.getenv("TELEGRAM_ENABLED", "false").lower() == "true"
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 _DEV_SECRET_KEY = "ixai-local-dev-secret-key-change-before-production"
+DEVELOPMENT_ENVS = {"development", "dev", "local"}
+PRODUCTION_ENVS = {"production", "prod"}
+
+
+def runtime_environment() -> str:
+    return (
+        os.getenv("APP_ENV")
+        or os.getenv("ENV")
+        or os.getenv("ENVIRONMENT")
+        or ""
+    ).strip().lower()
+
+
+def is_development_env() -> bool:
+    return runtime_environment() in DEVELOPMENT_ENVS
+
+
+def is_production_env() -> bool:
+    env = runtime_environment()
+    return env in PRODUCTION_ENVS or env == ""
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "IXAI Agent"
@@ -37,7 +57,7 @@ class Settings(BaseSettings):
         if self.SECRET_KEY:
             return self.SECRET_KEY
 
-        if self.ENVIRONMENT.lower() in {"production", "prod", "staging"}:
+        if is_production_env() or self.ENVIRONMENT.lower() in {"production", "prod", "staging"}:
             raise RuntimeError("SECRET_KEY must be set in production.")
 
         return _DEV_SECRET_KEY

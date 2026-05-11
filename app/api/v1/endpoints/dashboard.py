@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from app.api.deps import get_current_user, get_owned_portfolio
+from app.core.config import is_development_env
 from app.core.database import get_db
 from app.models.models import CryptoPosition, FCNPosition, Portfolio, StockPosition, User
 from app.services.portfolio_service import build_allocation_payload, build_portfolio_summary
@@ -24,6 +25,11 @@ from app.services.risk.allocation_engine import generate_allocation_advice
 from app.services.risk.risk_tracker import save_snapshot, compare_snapshot
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
+
+
+def require_development_route():
+    if not is_development_env():
+        raise HTTPException(status_code=404, detail="Not found")
 
 
 def get_top_stock_risk(db: Session, portfolio_id: str, total_value: float):
@@ -835,6 +841,7 @@ def get_my_risk_overview(
 
 @router.get("/dev-summary")
 def get_dev_summary():
+    require_development_route()
     return {
         "status": "ok",
         "portfolio_name": "IXAI Demo Portfolio",
@@ -856,6 +863,7 @@ def get_dev_summary():
     }
 @router.get("/dev-real-summary")
 def get_dev_real_summary(db: Session = Depends(get_db)):
+    require_development_route()
     portfolio = (
         db.query(Portfolio)
         .filter(Portfolio.name == "IXAI Demo Portfolio")

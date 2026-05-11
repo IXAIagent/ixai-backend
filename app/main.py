@@ -6,29 +6,24 @@ try:
     from app.api.v1.api import api_router
 except ModuleNotFoundError:
     from app.api.v1.router import api_router
-from app.core.config import settings
+from app.core.config import is_development_env, settings
 from app.core.database import Base, engine
 import app.models.models  # noqa: F401
 
 
 def _build_cors_origins() -> list[str]:
-    """Build a safe CORS allowlist for local dev, Vercel frontend, and env config."""
-    defaults = [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "https://ixai-website-clean.vercel.app",
-    ]
+    """Build a safe CORS allowlist from env, with localhost only in dev."""
+    defaults = []
+    if is_development_env():
+        defaults = [
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:3001",
+        ]
 
     configured: list[str] = []
 
-    # Prefer settings.cors_origins when config.py provides it.
-    raw_settings_origins = getattr(settings, "cors_origins", None)
-    if isinstance(raw_settings_origins, list):
-        configured.extend(str(origin).strip() for origin in raw_settings_origins if str(origin).strip())
-    elif isinstance(raw_settings_origins, str):
-        configured.extend(origin.strip() for origin in raw_settings_origins.split(",") if origin.strip())
-
-    # Also support Render/Vercel env var directly.
+    # Production-like environments only trust the explicit env allowlist.
     raw_env_origins = os.getenv("BACKEND_CORS_ORIGINS", "")
     configured.extend(origin.strip() for origin in raw_env_origins.split(",") if origin.strip())
 
@@ -40,13 +35,18 @@ def _build_cors_origins() -> list[str]:
     return origins
 
 
+def _build_cors_origin_regex() -> str | None:
+    if not is_development_env():
+        return None
+    return r"https://ixai-website-clean(?:-[a-zA-Z0-9]+)?-ixaiagents-projects\.vercel\.app"
+
+
 app = FastAPI(title=settings.PROJECT_NAME)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_build_cors_origins(),
-    # Allows Vercel preview deployments for this project while keeping credentials enabled.
-    allow_origin_regex=r"https://ixai-website-clean(?:-[a-zA-Z0-9]+)?-ixaiagents-projects\.vercel\.app",
+    allow_origin_regex=_build_cors_origin_regex(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
