@@ -3,7 +3,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 
 from app.api.deps import get_current_user, get_owned_portfolio
 from app.core.config import is_development_env
@@ -34,18 +34,15 @@ def require_development_route():
 
 def get_top_stock_risk(db: Session, portfolio_id: str, total_value: float):
     candidate_tables = ["stock", "stocks", "stock_position", "stock_positions"]
+    inspector = inspect(db.get_bind())
+    table_names = set(inspector.get_table_names())
 
     for table in candidate_tables:
-        exists = db.execute(
-            text("SELECT name FROM sqlite_master WHERE type='table' AND name=:name"),
-            {"name": table},
-        ).fetchone()
-
-        if not exists:
+        if table not in table_names:
             continue
 
-        columns = db.execute(text(f"PRAGMA table_info({table})")).fetchall()
-        column_names = [c[1] for c in columns]
+        columns = inspector.get_columns(table)
+        column_names = [str(c["name"]) for c in columns]
 
         if "symbol" not in column_names or "quantity" not in column_names or "portfolio_id" not in column_names:
             continue

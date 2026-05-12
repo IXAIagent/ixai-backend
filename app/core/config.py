@@ -8,6 +8,7 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 _DEV_SECRET_KEY = "ixai-local-dev-secret-key-change-before-production"
 DEVELOPMENT_ENVS = {"development", "dev", "local"}
 PRODUCTION_ENVS = {"production", "prod"}
+DEFAULT_SQLITE_DATABASE_URL = "sqlite:///./ixai.db"
 
 
 def runtime_environment() -> str:
@@ -27,12 +28,18 @@ def is_production_env() -> bool:
     env = runtime_environment()
     return env in PRODUCTION_ENVS or env == ""
 
+
+def normalize_database_url(database_url: str) -> str:
+    if database_url.startswith("postgres://"):
+        return "postgresql://" + database_url[len("postgres://"):]
+    return database_url
+
 class Settings(BaseSettings):
     PROJECT_NAME: str = "IXAI Agent"
     API_V1_STR: str = "/api/v1"
     ENVIRONMENT: str = "development"
 
-    DATABASE_URL: str = "sqlite:///./ixai.db"
+    DATABASE_URL: str = DEFAULT_SQLITE_DATABASE_URL
 
     SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
@@ -61,6 +68,21 @@ class Settings(BaseSettings):
             raise RuntimeError("SECRET_KEY must be set in production.")
 
         return _DEV_SECRET_KEY
+
+    @property
+    def resolved_database_url(self) -> str:
+        database_url = (self.DATABASE_URL or "").strip()
+        environment = (runtime_environment() or self.ENVIRONMENT or "").strip().lower()
+
+        if environment in {"production", "prod", "staging"} and (
+            not database_url or database_url == DEFAULT_SQLITE_DATABASE_URL
+        ):
+            raise RuntimeError("DATABASE_URL must be set in production.")
+
+        if not database_url:
+            database_url = DEFAULT_SQLITE_DATABASE_URL
+
+        return normalize_database_url(database_url)
 
     class Config:
         env_file = ".env"

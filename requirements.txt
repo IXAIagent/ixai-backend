@@ -10,3 +10,4 @@ python-jose
 yfinance
 requests
 jinja2
+psycopg2-binary
