@@ -1,7 +1,7 @@
 from datetime import datetime
 import uuid
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -71,9 +71,19 @@ class FCNPosition(Base):
     portfolio_id = Column(String, ForeignKey("portfolios.id"), index=True, nullable=False)
     name = Column(String, nullable=True)
     fcn_code = Column(String, index=True, nullable=True)
+    issuer = Column(String, nullable=True)
     notional = Column(Float, nullable=True)
     notional_amount = Column(Float, nullable=True)
     underlyings = Column(Text, nullable=True)
+    tenor_months = Column(Integer, nullable=True)
+    issue_date = Column(Date, nullable=True)
+    maturity_date = Column(Date, nullable=True)
+    settlement_currency = Column(String, nullable=True)
+    coupon_frequency = Column(String, nullable=True)
+    next_observation_date = Column(Date, nullable=True)
+    next_coupon_date = Column(Date, nullable=True)
+    observation_dates_json = Column(Text, nullable=True)
+    coupon_dates_json = Column(Text, nullable=True)
     worst_of_symbol = Column(String, nullable=True)
     ki_level = Column(Float, nullable=True)
     ko_level = Column(Float, nullable=True)

@@ -1,4 +1,5 @@
 import json
+from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -59,9 +60,19 @@ class CashUpdateInput(BaseModel):
 class FCNInput(BaseModel):
     name: Optional[str] = None
     fcn_code: Optional[str] = None
+    issuer: Optional[str] = None
     notional_amount: Optional[float] = None
     underlyings: Optional[str] = None
     underlying_details: Optional[list[dict]] = None
+    tenor_months: Optional[int] = None
+    issue_date: Optional[date] = None
+    maturity_date: Optional[date] = None
+    settlement_currency: Optional[str] = None
+    coupon_frequency: Optional[str] = None
+    next_observation_date: Optional[date] = None
+    next_coupon_date: Optional[date] = None
+    observation_dates_json: Optional[str] = None
+    coupon_dates_json: Optional[str] = None
     worst_of_symbol: Optional[str] = None
     initial_price: Optional[float] = None
     current_price: Optional[float] = None
@@ -547,9 +558,19 @@ def add_fcn(payload: FCNInput, request: Request, db: Session = Depends(get_db)):
         portfolio_id=portfolio.id,
         name=_clean_text(payload.name, code),
         fcn_code=code,
+        issuer=_clean_text(payload.issuer) or None,
         notional=payload.notional_amount,
         notional_amount=payload.notional_amount,
         underlyings=underlyings,
+        tenor_months=payload.tenor_months,
+        issue_date=payload.issue_date,
+        maturity_date=payload.maturity_date,
+        settlement_currency=_clean_symbol(payload.settlement_currency, "USD"),
+        coupon_frequency=_clean_text(payload.coupon_frequency) or None,
+        next_observation_date=payload.next_observation_date,
+        next_coupon_date=payload.next_coupon_date,
+        observation_dates_json=_clean_text(payload.observation_dates_json) or None,
+        coupon_dates_json=_clean_text(payload.coupon_dates_json) or None,
         worst_of_symbol=_clean_symbol(payload.worst_of_symbol),
         ki_level=payload.ki_level,
         ko_level=payload.ko_level,

@@ -1,3 +1,4 @@
+from datetime import date, datetime
 from math import isfinite
 from typing import Any
 
@@ -273,19 +274,64 @@ def _live_price(
         return None, "manual"
 
 
+def _date_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    text_value = str(value).strip()
+    return text_value or None
+
+
+def _days_to_maturity(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        maturity = value.date()
+    elif isinstance(value, date):
+        maturity = value
+    else:
+        try:
+            maturity = date.fromisoformat(str(value).strip()[:10])
+        except ValueError:
+            return None
+
+    return max((maturity - date.today()).days, 0)
+
+
 def _serialize_fcn_position(fcn: FCNPosition) -> dict[str, Any]:
     code = getattr(fcn, "fcn_code", None) or getattr(fcn, "name", None) or "FCN"
+    worst_underlying = getattr(fcn, "worst_of_symbol", None) or ""
+    distance_to_ki = getattr(fcn, "distance_to_ki_pct", None)
+    distance_to_ko = getattr(fcn, "distance_to_ko_pct", None)
     return {
         "id": getattr(fcn, "id", None),
         "name": getattr(fcn, "name", None) or code,
         "fcn_code": getattr(fcn, "fcn_code", None) or code,
         "code": code,
+        "issuer": getattr(fcn, "issuer", None),
         "notional": getattr(fcn, "notional", None),
         "notional_amount": getattr(fcn, "notional_amount", None) or getattr(fcn, "notional", None),
+        "underlyings": getattr(fcn, "underlyings", None),
+        "tenor_months": getattr(fcn, "tenor_months", None),
+        "issue_date": _date_text(getattr(fcn, "issue_date", None)),
+        "maturity_date": _date_text(getattr(fcn, "maturity_date", None)),
+        "days_to_maturity": _days_to_maturity(getattr(fcn, "maturity_date", None)),
+        "settlement_currency": getattr(fcn, "settlement_currency", None),
+        "coupon_frequency": getattr(fcn, "coupon_frequency", None),
+        "next_observation_date": _date_text(getattr(fcn, "next_observation_date", None)),
+        "next_coupon_date": _date_text(getattr(fcn, "next_coupon_date", None)),
+        "observation_dates_json": getattr(fcn, "observation_dates_json", None),
+        "coupon_dates_json": getattr(fcn, "coupon_dates_json", None),
         "worst_of_symbol": getattr(fcn, "worst_of_symbol", None) or "",
-        "worst_of": getattr(fcn, "worst_of_symbol", None) or "",
-        "distance_to_ki_pct": getattr(fcn, "distance_to_ki_pct", None),
-        "distance_to_ko_pct": getattr(fcn, "distance_to_ko_pct", None),
+        "worst_of": worst_underlying,
+        "worst_underlying": worst_underlying,
+        "distance_to_ki_pct": distance_to_ki,
+        "distance_to_ko_pct": distance_to_ko,
+        "distance_to_ki": distance_to_ki,
+        "distance_to_ko": distance_to_ko,
         "risk_level": getattr(fcn, "risk_level", None) or "low",
     }
 
