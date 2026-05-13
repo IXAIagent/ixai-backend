@@ -1,4 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
+import time
+from collections import defaultdict, deque
+from threading import Lock
+
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -13,6 +17,14 @@ from app.models.models import User, Portfolio
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+RATE_LIMIT_WINDOW_SECONDS = 60
+RATE_LIMITS = {
+    "login": 5,
+    "register": 3,
+}
+_rate_limit_hits: dict[str, deque[float]] = defaultdict(deque)
+_rate_limit_lock = Lock()
+
 
 class RegisterRequest(BaseModel):
     email: str
@@ -24,8 +36,55 @@ class LoginRequest(BaseModel):
     password: str
 
 
+def _client_ip(request: Request) -> str:
+    forwarded_for = request.headers.get("x-forwarded-for", "")
+    if forwarded_for:
+        return forwarded_for.split(",", 1)[0].strip() or "unknown"
+
+    real_ip = request.headers.get("x-real-ip", "")
+    if real_ip:
+        return real_ip.strip()
+
+    if request.client and request.client.host:
+        return request.client.host
+
+    return "unknown"
+
+
+def check_rate_limit(request: Request, route_key: str) -> None:
+    limit = RATE_LIMITS.get(route_key)
+    if not limit:
+        return
+
+    try:
+        now = time.monotonic()
+        bucket_key = f"{route_key}:{_client_ip(request)}"
+
+        with _rate_limit_lock:
+            hits = _rate_limit_hits[bucket_key]
+            while hits and now - hits[0] >= RATE_LIMIT_WINDOW_SECONDS:
+                hits.popleft()
+
+            if len(hits) >= limit:
+                raise HTTPException(
+                    status_code=429,
+                    detail="Too many attempts. Please wait and try again.",
+                )
+
+            hits.append(now)
+    except HTTPException:
+        raise
+    except Exception:
+        return
+
+
 @router.post("/register")
-def register(payload: RegisterRequest, db: Session = Depends(get_db)):
+def register(
+    payload: RegisterRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    check_rate_limit(request, "register")
     try:
         existing = db.query(User).filter(User.email == payload.email).first()
         if existing:
@@ -64,7 +123,12 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/login")
-def login(payload: LoginRequest, db: Session = Depends(get_db)):
+def login(
+    payload: LoginRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    check_rate_limit(request, "login")
     user = db.query(User).filter(User.email == payload.email).first()
 
     if not user or not verify_password(payload.password, user.hashed_password):
