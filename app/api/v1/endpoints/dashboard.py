@@ -4,7 +4,6 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import inspect, text
 
 from app.api.deps import get_current_user, get_owned_portfolio
 from app.core.config import is_development_env
@@ -34,55 +33,29 @@ def require_development_route():
 
 
 def get_top_stock_risk(db: Session, portfolio_id: str, total_value: float):
-    candidate_tables = ["stock", "stocks", "stock_position", "stock_positions"]
-    inspector = inspect(db.get_bind())
-    table_names = set(inspector.get_table_names())
+    stocks = (
+        db.query(StockPosition)
+        .filter(StockPosition.portfolio_id == portfolio_id)
+        .all()
+    )
+    top_symbol = None
+    top_ratio = 0
 
-    for table in candidate_tables:
-        if table not in table_names:
-            continue
+    for stock in stocks:
+        price = getattr(stock, "avg_price", None) or getattr(stock, "current_price", None)
+        value = float(getattr(stock, "quantity", 0) or 0) * float(price or 0)
+        ratio = value / total_value if total_value > 0 else 0
 
-        columns = inspector.get_columns(table)
-        column_names = [str(c["name"]) for c in columns]
+        if ratio > top_ratio:
+            top_ratio = ratio
+            top_symbol = str(getattr(stock, "symbol", "") or "").upper()
 
-        if "symbol" not in column_names or "quantity" not in column_names or "portfolio_id" not in column_names:
-            continue
-
-        price_col = None
-        for c in ["avg_cost", "avg_price", "current_price"]:
-            if c in column_names:
-                price_col = c
-                break
-
-        if not price_col:
-            continue
-
-        rows = db.execute(
-            text(f"""
-                SELECT symbol, quantity, {price_col} AS price
-                FROM {table}
-                WHERE portfolio_id = :pid
-            """),
-            {"pid": portfolio_id},
-        ).fetchall()
-
-        top_symbol = None
-        top_ratio = 0
-
-        for r in rows:
-            value = float(r.quantity or 0) * float(r.price or 0)
-            ratio = value / total_value if total_value > 0 else 0
-
-            if ratio > top_ratio:
-                top_ratio = ratio
-                top_symbol = str(r.symbol).upper()
-
-        if top_symbol:
-            return {
-                "symbol": top_symbol,
-                "ratio": top_ratio,
-                "text": f"{top_symbol} 佔比 {int(top_ratio * 100)}%",
-            }
+    if top_symbol:
+        return {
+            "symbol": top_symbol,
+            "ratio": top_ratio,
+            "text": f"{top_symbol} 佔比 {int(top_ratio * 100)}%",
+        }
 
     return None
 
