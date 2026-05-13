@@ -16,6 +16,7 @@ from app.services.action_service import calculate_stock_action
 from app.services.fcn_monitor_service import FCNMonitorService
 from app.services.market_data.service import MarketDataService
 from app.services.normalization import get_asset_display_name
+from app.services.portfolio.summary_service import PortfolioSummaryService
 from app.services.resolver import resolve_asset
 from app.services.risk_engine_v3 import build_risk_engine_v3
 from app.services.risk.portfolio_risk import calculate_portfolio_risk
@@ -615,29 +616,19 @@ def get_summary(
     if not payload:
         raise HTTPException(status_code=404, detail="Portfolio not found")
 
+    summary_service = PortfolioSummaryService(db)
+    ratios = summary_service.calculate_asset_ratios(payload)
     total = payload.get("total_value", 0) or 0
-    stock_value = payload.get("stock_value", 0) or 0
-    crypto_value = payload.get("crypto_value", 0) or 0
-
-    stock_ratio = stock_value / total if total > 0 else 0
-    crypto_ratio = crypto_value / total if total > 0 else 0
-    risk_asset_ratio = (stock_value + crypto_value) / total if total > 0 else 0
-
-    if crypto_ratio >= 0.5:
-        level = "HIGH"
-        msg = "Crypto 佔比過高"
-    elif risk_asset_ratio > 0.7:
-        level = "HIGH"
-        msg = "風險資產占比過高"
-    elif crypto_ratio >= 0.3:
-        level = "MEDIUM"
-        msg = "Crypto 佔比偏高"
-    elif risk_asset_ratio > 0.4:
-        level = "MEDIUM"
-        msg = "風險資產占比偏高"
-    else:
-        level = "LOW"
-        msg = "資產配置正常"
+    stock_ratio = ratios["stock_ratio"]
+    crypto_ratio = ratios["crypto_ratio"]
+    risk_asset_ratio = ratios["risk_asset_ratio"]
+    risk_level_result = summary_service.determine_risk_level(
+        stock_ratio=stock_ratio,
+        crypto_ratio=crypto_ratio,
+        top_risk_asset_ratio=risk_asset_ratio,
+    )
+    level = risk_level_result["risk_level"]
+    msg = risk_level_result["risk_message"]
 
     top_risk_obj = get_top_stock_risk(db, portfolio.id, total)
     top_risk_text = top_risk_obj["text"] if top_risk_obj else None
@@ -648,9 +639,9 @@ def get_summary(
     ai_advice = build_ai_advice(top_risk_obj, risk_asset_ratio, crypto_ratio)
     ai_advice = ai_advice or ""
 
-    payload["stock_ratio"] = round(stock_ratio * 100, 2)
-    payload["crypto_ratio"] = round(crypto_ratio * 100, 2)
-    payload["risk_asset_ratio"] = round(risk_asset_ratio * 100, 2)
+    payload["stock_ratio"] = ratios["stock_ratio_pct"]
+    payload["crypto_ratio"] = ratios["crypto_ratio_pct"]
+    payload["risk_asset_ratio"] = ratios["risk_asset_ratio_pct"]
 
     risk_positions = build_portfolio_risk_positions(
         payload=payload,
@@ -690,9 +681,10 @@ def get_summary(
 👉 避免單一資產過度集中
 """
 
-    risk_score = max(
-        int(risk_asset_ratio * 100),
-        int(crypto_ratio * 120),
+    risk_score = summary_service.calculate_risk_score(
+        risk_level=level,
+        risk_asset_ratio=risk_asset_ratio,
+        crypto_ratio=crypto_ratio,
     )
 
     risk_alerts = build_alerts_from_risk(
