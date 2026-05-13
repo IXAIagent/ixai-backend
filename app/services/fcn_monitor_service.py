@@ -84,6 +84,7 @@ class FCNMonitorService:
                 "current_price": None,
                 "performance": None,
                 "price_source": None,
+                "is_stale": True,
             }
 
             if underlying.get("data_quality_warning"):
@@ -99,6 +100,7 @@ class FCNMonitorService:
             if current_price is None:
                 current_price = self._safe_float(price_result)
             source = str(self._value_from_object(price_result, ("source",)) or "")
+            is_stale = bool(self._value_from_object(price_result, ("is_stale",)))
 
             if current_price is None:
                 current_price = self._safe_float(underlying.get("current_price"))
@@ -107,6 +109,7 @@ class FCNMonitorService:
                     underlying_results.append(result)
                     continue
                 source = "manual"
+                is_stale = True
 
             if source:
                 used_sources.add(source)
@@ -118,6 +121,7 @@ class FCNMonitorService:
                 "current_price": self._round(current_price),
                 "performance": self._round(performance),
                 "price_source": source or None,
+                "is_stale": is_stale,
             })
             underlying_results.append(result)
             valid_results.append({
@@ -126,6 +130,7 @@ class FCNMonitorService:
                 "current_price": current_price,
                 "performance": performance,
                 "price_source": source or None,
+                "is_stale": is_stale,
             })
 
         if not valid_results:

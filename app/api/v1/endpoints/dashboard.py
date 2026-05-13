@@ -199,12 +199,13 @@ def _live_price(
     market_service: MarketDataService,
     symbol: str,
     asset_type: str,
-) -> tuple[float | None, str]:
+) -> tuple[float | None, str, bool]:
     try:
         result = market_service.get_price(symbol, asset_type=asset_type)
         price = _safe_price(getattr(result, "price", None))
         source = str(getattr(result, "source", None) or "manual")
-        return price, source
+        is_stale = bool(getattr(result, "is_stale", False))
+        return price, source, is_stale
     except Exception as exc:
         logger.warning(
             "Market price lookup failed for %s (%s): %s",
@@ -212,7 +213,7 @@ def _live_price(
             asset_type,
             exc,
         )
-        return None, "stale"
+        return None, "stale", True
 
 
 def _date_text(value: Any) -> str | None:
@@ -283,7 +284,7 @@ def _serialize_stock_position(
 ) -> dict[str, Any]:
     symbol = str(getattr(stock, "symbol", None) or "STOCK").upper()
     quantity = _safe_float(getattr(stock, "quantity", 0))
-    live_price, price_source = _live_price(market_service, symbol, "stock")
+    live_price, price_source, is_stale = _live_price(market_service, symbol, "stock")
     current_price = live_price or _safe_float(
         getattr(stock, "current_price", None) or getattr(stock, "avg_price", 0)
     )
@@ -310,7 +311,8 @@ def _serialize_stock_position(
         "avg_price": getattr(stock, "avg_price", None),
         "current_price": current_price,
         "current_value": current_value,
-        "price_source": price_source if live_price else "stored",
+        "price_source": price_source if live_price else ("stale" if is_stale else "stored"),
+        "is_stale": is_stale or not bool(live_price),
     }
 
 
@@ -321,7 +323,7 @@ def _serialize_crypto_position(
     symbol = str(getattr(crypto, "symbol", None) or "CRYPTO").upper()
     asset_type = getattr(crypto, "asset_type", None) or "crypto"
     quantity = _safe_float(getattr(crypto, "quantity", 0))
-    live_price, price_source = _live_price(market_service, symbol, asset_type)
+    live_price, price_source, is_stale = _live_price(market_service, symbol, asset_type)
     current_price = live_price or _safe_float(getattr(crypto, "current_price", 0))
     stored_value = getattr(crypto, "current_value", None)
     current_value = quantity * current_price if current_price > 0 else stored_value
@@ -343,7 +345,8 @@ def _serialize_crypto_position(
         "avg_price": getattr(crypto, "avg_price", None),
         "current_price": current_price,
         "current_value": current_value,
-        "price_source": price_source if live_price else "stored",
+        "price_source": price_source if live_price else ("stale" if is_stale else "stored"),
+        "is_stale": is_stale or not bool(live_price),
         "leverage": getattr(crypto, "leverage", None),
         "grid_lower": grid_lower,
         "grid_upper": grid_upper,
