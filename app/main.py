@@ -65,6 +65,7 @@ def health():
 
 @app.on_event("startup")
 def init_db_tables():
+    settings.validate_runtime_security()
     Base.metadata.create_all(bind=engine)
 
 

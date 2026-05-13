@@ -6,7 +6,7 @@ import re
 from collections import Counter
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -15,6 +15,7 @@ from app.api.v1.endpoints.portfolio_input import (
     get_dev_portfolio,
     get_or_create_user_portfolio,
 )
+from app.core.config import is_development_env
 from app.core.database import get_db
 from app.services.market_data.service import MarketDataService
 from app.services.portfolio_service import get_portfolio_positions
@@ -95,7 +96,10 @@ def _get_refresh_portfolio(request: Request, db: Session):
         user = get_current_user(token=token, db=db)
         return get_or_create_user_portfolio(db, user), "user", None
 
-    return get_dev_portfolio(db), "demo", None
+    if is_development_env():
+        return get_dev_portfolio(db), "demo", None
+
+    raise HTTPException(status_code=401, detail="Authentication required")
 
 
 def _extract_fcn_symbols(fcn: Any) -> list[str]:

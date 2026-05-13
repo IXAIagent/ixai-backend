@@ -1,13 +1,16 @@
 import os
+import logging
 
 from pydantic_settings import BaseSettings
 
 TELEGRAM_ENABLED = os.getenv("TELEGRAM_ENABLED", "false").lower() == "true"
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-_DEV_SECRET_KEY = "ixai-local-dev-secret-key-change-before-production"
+logger = logging.getLogger(__name__)
+
+DEV_ONLY_SECRET_KEY = "ixai-local-dev-secret-key-change-before-production"
 DEVELOPMENT_ENVS = {"development", "dev", "local"}
-PRODUCTION_ENVS = {"production", "prod"}
+PRODUCTION_ENVS = {"production", "prod", "staging"}
 DEFAULT_SQLITE_DATABASE_URL = "sqlite:///./ixai.db"
 
 
@@ -25,8 +28,11 @@ def is_development_env() -> bool:
 
 
 def is_production_env() -> bool:
-    env = runtime_environment()
-    return env in PRODUCTION_ENVS or env == ""
+    return runtime_environment() in PRODUCTION_ENVS
+
+
+def is_production_like_env() -> bool:
+    return not is_development_env()
 
 
 def normalize_database_url(database_url: str) -> str:
@@ -37,7 +43,7 @@ def normalize_database_url(database_url: str) -> str:
 class Settings(BaseSettings):
     PROJECT_NAME: str = "IXAI Agent"
     API_V1_STR: str = "/api/v1"
-    ENVIRONMENT: str = "development"
+    ENVIRONMENT: str = ""
 
     DATABASE_URL: str = DEFAULT_SQLITE_DATABASE_URL
 
@@ -64,10 +70,14 @@ class Settings(BaseSettings):
         if self.SECRET_KEY:
             return self.SECRET_KEY
 
-        if is_production_env() or self.ENVIRONMENT.lower() in {"production", "prod", "staging"}:
-            raise RuntimeError("SECRET_KEY must be set in production.")
+        if is_development_env():
+            logger.warning("Using DEV_ONLY_SECRET_KEY fallback. This is allowed only in development/local.")
+            return DEV_ONLY_SECRET_KEY
 
-        return _DEV_SECRET_KEY
+        raise RuntimeError("SECRET_KEY must be set in production-like environments.")
+
+    def validate_runtime_security(self) -> None:
+        _ = self.resolved_secret_key
 
     @property
     def resolved_database_url(self) -> str:

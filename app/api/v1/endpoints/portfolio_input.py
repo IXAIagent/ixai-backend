@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import date
 from typing import Optional
 
@@ -13,6 +14,7 @@ from app.models.models import CashPosition, CryptoPosition, FCNPosition, Portfol
 from app.services.normalization import normalize_stock_symbol
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class StockInput(BaseModel):
@@ -84,6 +86,11 @@ class FCNInput(BaseModel):
 
 
 def get_dev_portfolio(db: Session):
+    if not is_development_env():
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    logger.warning("Using development-only demo portfolio fallback.")
+
     portfolio = (
         db.query(Portfolio)
         .filter(Portfolio.name == "IXAI Demo Portfolio")
