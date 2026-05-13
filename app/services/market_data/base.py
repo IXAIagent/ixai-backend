@@ -16,6 +16,7 @@ class MarketPriceResult:
     source: str
     updated_at: str
     error: str | None = None
+    is_stale: bool = False
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)

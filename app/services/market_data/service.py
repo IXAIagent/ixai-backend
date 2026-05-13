@@ -1,6 +1,38 @@
 from __future__ import annotations
 
+import time
 from typing import Literal
+
+try:
+    from cachetools import TTLCache
+except ImportError:  # pragma: no cover - used only before dependencies are installed.
+    class TTLCache(dict):
+        def __init__(self, maxsize: int, ttl: int):
+            super().__init__()
+            self.maxsize = maxsize
+            self.ttl = ttl
+            self._expires: dict[object, float] = {}
+
+        def __contains__(self, key: object) -> bool:
+            expires_at = self._expires.get(key)
+            if expires_at is None or expires_at <= time.monotonic():
+                self.pop(key, None)
+                self._expires.pop(key, None)
+                return False
+            return super().__contains__(key)
+
+        def __getitem__(self, key):
+            if key not in self:
+                raise KeyError(key)
+            return super().__getitem__(key)
+
+        def __setitem__(self, key, value) -> None:
+            if len(self) >= self.maxsize:
+                oldest_key = next(iter(self))
+                self.pop(oldest_key, None)
+                self._expires.pop(oldest_key, None)
+            self._expires[key] = time.monotonic() + self.ttl
+            super().__setitem__(key, value)
 
 from app.services.market_data.base import MarketPriceResult, utc_now_iso
 from app.services.market_data.binance_provider import BinanceProvider
@@ -16,6 +48,7 @@ SymbolType = Literal["crypto", "stock"]
 
 class MarketDataService:
     DEFAULT_CRYPTO_QUOTE = "USDT"
+    _price_cache = TTLCache(maxsize=500, ttl=60)
 
     CRYPTO_ASSET_TYPES = {"crypto", "grid", "dual"}
     CRYPTO_SYMBOLS = {
@@ -67,6 +100,10 @@ class MarketDataService:
         if not normalized_symbol:
             return self._manual_result("", "Symbol is required")
 
+        cache_key = self._cache_key(normalized_symbol, asset_type)
+        if cache_key in self._price_cache:
+            return self._price_cache[cache_key]
+
         if self._should_use_binance(normalized_symbol, asset_type):
             provider_symbol = self._to_binance_symbol(normalized_symbol)
             provider_result = self._safe_provider_get(
@@ -74,7 +111,7 @@ class MarketDataService:
                 provider_symbol,
             )
             if provider_result.price is not None:
-                return provider_result
+                return self._cache_result(cache_key, provider_result)
 
             yahoo_symbol = get_crypto_yahoo_fallback_symbol(provider_symbol)
             if yahoo_symbol:
@@ -83,17 +120,18 @@ class MarketDataService:
                     yahoo_symbol,
                 )
                 if yahoo_result.price is not None:
-                    return yahoo_result
+                    return self._cache_result(cache_key, yahoo_result)
 
             return self._with_manual_fallback(provider_result, provider_symbol)
 
-        return self._with_manual_fallback(
+        result = self._with_manual_fallback(
             provider_result=self._safe_provider_get(
                 self.yahoo_provider,
                 normalized_symbol,
             ),
             symbol=normalized_symbol,
         )
+        return self._cache_result(cache_key, result)
 
     def get_price_value(
         self,
@@ -198,3 +236,26 @@ class MarketDataService:
         if str(asset_type or "").strip().lower() in self.CRYPTO_ASSET_TYPES:
             return normalize_crypto_symbol(symbol)
         return normalize_stock_symbol(symbol)
+
+    def _cache_key(self, normalized_symbol: str, asset_type: str | None) -> tuple[str, str]:
+        return (
+            str(normalized_symbol or "").strip().upper(),
+            str(asset_type or "").strip().lower(),
+        )
+
+    def _cache_result(
+        self,
+        cache_key: tuple[str, str],
+        result: MarketPriceResult,
+    ) -> MarketPriceResult:
+        if result.price is None:
+            return result
+
+        try:
+            if float(result.price) <= 0:
+                return result
+        except (TypeError, ValueError):
+            return result
+
+        self._price_cache[cache_key] = result
+        return result

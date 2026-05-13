@@ -1,4 +1,5 @@
 from datetime import date, datetime
+import logging
 from math import isfinite
 from typing import Any
 
@@ -27,6 +28,7 @@ from app.services.risk.risk_tracker import save_snapshot, compare_snapshot
 from app.services.risk.position_analyzer import RiskPositionAnalyzer
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
+logger = logging.getLogger(__name__)
 
 
 def require_development_route():
@@ -203,8 +205,14 @@ def _live_price(
         price = _safe_price(getattr(result, "price", None))
         source = str(getattr(result, "source", None) or "manual")
         return price, source
-    except Exception:
-        return None, "manual"
+    except Exception as exc:
+        logger.warning(
+            "Market price lookup failed for %s (%s): %s",
+            symbol,
+            asset_type,
+            exc,
+        )
+        return None, "stale"
 
 
 def _date_text(value: Any) -> str | None:
