@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     NEWS_CACHE_TTL: int = 3600
     NEWS_MAX_ARTICLES_PER_SYMBOL: int = 5
     NEWS_MAX_TOTAL_ARTICLES: int = 20
+    NEWS_SUMMARY_PROVIDER: str = "rule_based"
+    ANTHROPIC_API_KEY: str | None = None
+    CLAUDE_MODEL: str = "claude-sonnet-4-5"
 
     @property
     def cors_origins(self) -> list[str]:

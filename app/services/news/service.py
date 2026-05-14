@@ -15,6 +15,8 @@ from app.services.news.priority_engine import PortfolioPriorityEngine
 from app.services.news.providers.yfinance_provider import YFinanceNewsProvider
 from app.services.news.relevance_engine import RelevanceEngine
 from app.services.news.schemas import NewsArticle, PortfolioNewsResponse, PortfolioPriorityResponse
+from app.services.news.summarizer import RuleBasedSummaryProvider, SummaryProvider
+from app.services.news.summarizer.llm import ClaudeSummaryProvider
 from app.services.normalization import get_crypto_yahoo_fallback_symbol, normalize_crypto_symbol
 
 logger = logging.getLogger(__name__)
@@ -28,12 +30,14 @@ class NewsService:
         relevance_engine: RelevanceEngine | None = None,
         impact_engine: PortfolioImpactEngine | None = None,
         priority_engine: PortfolioPriorityEngine | None = None,
+        summary_provider: SummaryProvider | None = None,
     ) -> None:
         self.db = db
         self.provider = provider or YFinanceNewsProvider()
         self.relevance_engine = relevance_engine or RelevanceEngine()
         self.impact_engine = impact_engine or PortfolioImpactEngine()
         self.priority_engine = priority_engine or PortfolioPriorityEngine()
+        self.summary_provider = summary_provider or self._build_summary_provider()
 
     def get_portfolio_news(self, portfolio: Portfolio) -> PortfolioNewsResponse:
         context = self._build_portfolio_context(portfolio)
@@ -65,6 +69,7 @@ class NewsService:
 
         articles = self._rank_and_limit_articles(articles, max_total, per_symbol_count)
         articles = self.priority_engine.enrich_articles(articles)
+        self._add_ai_summaries(articles, context)
 
         return PortfolioNewsResponse(
             portfolio_id=str(portfolio.id),
@@ -74,6 +79,27 @@ class NewsService:
             fetched_at=utc_now_iso(),
             is_stale=False,
         )
+
+    def _build_summary_provider(self) -> SummaryProvider:
+        if str(settings.NEWS_SUMMARY_PROVIDER or "").strip().lower() == "claude":
+            return ClaudeSummaryProvider(fallback=RuleBasedSummaryProvider())
+        return RuleBasedSummaryProvider()
+
+    def _add_ai_summaries(self, articles: list[NewsArticle], context: dict) -> None:
+        try:
+            ranked = sorted(
+                articles,
+                key=lambda article: (
+                    int(getattr(article, "priority_score", 0) or 0),
+                    float(getattr(article, "relevance_score", 0) or 0),
+                    str(getattr(article, "published_at", "") or ""),
+                ),
+                reverse=True,
+            )
+            for article in ranked[:5]:
+                article.ai_summary = self.summary_provider.summarize_article(article, context)
+        except Exception as exc:
+            logger.warning("AI summary generation failed: %s", exc)
 
     def get_portfolio_priority(self, portfolio: Portfolio) -> PortfolioPriorityResponse:
         try:

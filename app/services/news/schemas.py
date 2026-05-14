@@ -27,6 +27,7 @@ class NewsArticle(BaseModel):
     priority_score: int = 0
     priority_level: str = "LOW"
     alert_summary: str = ""
+    ai_summary: str = ""
 
 
 class PortfolioNewsResponse(BaseModel):
