@@ -47,6 +47,7 @@ class NewsService:
                     seen_links.add(key)
                     article.symbol = str(article.symbol or symbol).strip().upper()
                     article = self.relevance_engine.analyze(article, context)
+                    article.narrative = self._generate_narrative(article)
                     articles.append(article)
             except Exception as exc:
                 logger.warning("Portfolio news failed for %s: %s", symbol, exc)
@@ -155,6 +156,38 @@ class NewsService:
             if len(selected) >= max_total:
                 break
         return selected
+
+    def _generate_narrative(self, article: NewsArticle) -> str:
+        try:
+            relevance = str(article.relevance_level or "LOW").upper()
+            impact = str(article.impact or "neutral").lower()
+
+            if relevance == "HIGH" and impact == "negative":
+                parts = ["此新聞可能增加相關持倉短期波動與風險壓力，需留意價格變化。"]
+            elif relevance == "HIGH" and impact == "positive":
+                parts = ["此新聞可能對相關持倉形成正面情緒與基本面支撐。"]
+            elif relevance == "MEDIUM":
+                parts = ["此新聞可能影響市場對該標的的短期看法，建議持續觀察。"]
+            else:
+                parts = ["此新聞目前偏資訊性，對持倉影響有限。"]
+
+            if article.is_fcn_related:
+                parts.append("此標的同時屬於 FCN underlying，需特別留意 KI/KO 風險變化。")
+
+            if relevance == "HIGH" and impact == "negative":
+                parts.append("若後續出現連續負面消息，可能提高投資組合風險。")
+            elif relevance == "HIGH" and impact == "positive":
+                parts.append("若市場情緒延續，可能有助於改善持倉表現。")
+
+            return self._trim_narrative("".join(parts))
+        except Exception:
+            return ""
+
+    def _trim_narrative(self, text: str, max_length: int = 120) -> str:
+        normalized = str(text or "").strip()
+        if len(normalized) <= max_length:
+            return normalized
+        return normalized[:max_length].rstrip("，。； ") + "。"
 
     def _parse_fcn_underlyings_text(self, raw_value) -> list[str]:
         if raw_value is None:

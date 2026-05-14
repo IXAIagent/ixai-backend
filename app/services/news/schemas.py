@@ -17,6 +17,7 @@ class NewsArticle(BaseModel):
     impact_reason: str = ""
     is_fcn_related: bool = False
     related_fcn_codes: list[str] = Field(default_factory=list)
+    narrative: str = ""
 
 
 class PortfolioNewsResponse(BaseModel):
