@@ -11,6 +11,12 @@ class NewsArticle(BaseModel):
     published_at: str | None = None
     related_tickers: list[str] = Field(default_factory=list)
     source: str = "yfinance"
+    relevance_score: float = 0
+    relevance_level: str = "LOW"
+    impact: str = "neutral"
+    impact_reason: str = ""
+    is_fcn_related: bool = False
+    related_fcn_codes: list[str] = Field(default_factory=list)
 
 
 class PortfolioNewsResponse(BaseModel):

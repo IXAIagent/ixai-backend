@@ -11,6 +11,7 @@ from app.models.models import CryptoPosition, FCNPosition, Portfolio, StockPosit
 from app.services.fcn_monitor_service import FCNMonitorService
 from app.services.market_data.base import utc_now_iso
 from app.services.news.providers.yfinance_provider import YFinanceNewsProvider
+from app.services.news.relevance_engine import RelevanceEngine
 from app.services.news.schemas import NewsArticle, PortfolioNewsResponse
 from app.services.normalization import get_crypto_yahoo_fallback_symbol, normalize_crypto_symbol
 
@@ -22,31 +23,35 @@ class NewsService:
         self,
         db: Session,
         provider: YFinanceNewsProvider | None = None,
+        relevance_engine: RelevanceEngine | None = None,
     ) -> None:
         self.db = db
         self.provider = provider or YFinanceNewsProvider()
+        self.relevance_engine = relevance_engine or RelevanceEngine()
 
     def get_portfolio_news(self, portfolio: Portfolio) -> PortfolioNewsResponse:
-        symbols = self._collect_portfolio_symbols(portfolio)
+        context = self._build_portfolio_context(portfolio)
+        symbols = list(context["symbols"])
         articles: list[NewsArticle] = []
         seen_links: set[str] = set()
+        per_symbol_count: dict[str, int] = {}
         max_total = max(1, int(settings.NEWS_MAX_TOTAL_ARTICLES or 20))
         per_symbol = max(1, int(settings.NEWS_MAX_ARTICLES_PER_SYMBOL or 5))
 
         for symbol in symbols:
-            if len(articles) >= max_total:
-                break
             try:
                 for article in self.provider.get_news(symbol, limit=per_symbol):
                     key = article.link or f"{article.symbol}:{article.title}"
                     if key in seen_links:
                         continue
                     seen_links.add(key)
+                    article.symbol = str(article.symbol or symbol).strip().upper()
+                    article = self.relevance_engine.analyze(article, context)
                     articles.append(article)
-                    if len(articles) >= max_total:
-                        break
             except Exception as exc:
                 logger.warning("Portfolio news failed for %s: %s", symbol, exc)
+
+        articles = self._rank_and_limit_articles(articles, max_total, per_symbol_count)
 
         return PortfolioNewsResponse(
             portfolio_id=str(portfolio.id),
@@ -57,12 +62,23 @@ class NewsService:
             is_stale=False,
         )
 
-    def _collect_portfolio_symbols(self, portfolio: Portfolio) -> list[str]:
-        symbols: list[str] = []
-        symbols.extend(self._stock_symbols(portfolio.id))
-        symbols.extend(self._crypto_symbols(portfolio.id))
-        symbols.extend(self._fcn_symbols(portfolio.id))
-        return list(dict.fromkeys(symbol for symbol in symbols if symbol))
+    def _build_portfolio_context(self, portfolio: Portfolio) -> dict:
+        stock_symbols = set(self._stock_symbols(portfolio.id))
+        crypto_symbols = set(self._crypto_symbols(portfolio.id))
+        fcn_context = self._fcn_context(portfolio.id)
+        symbols = list(dict.fromkeys([
+            *stock_symbols,
+            *crypto_symbols,
+            *fcn_context["fcn_underlying_symbols"],
+        ]))
+        return {
+            "symbols": symbols,
+            "stock_symbols": stock_symbols,
+            "crypto_symbols": crypto_symbols,
+            "fcn_underlying_symbols": fcn_context["fcn_underlying_symbols"],
+            "fcn_codes_by_symbol": fcn_context["fcn_codes_by_symbol"],
+            "worst_of_symbols": fcn_context["worst_of_symbols"],
+        }
 
     def _stock_symbols(self, portfolio_id: str) -> list[str]:
         stocks = self.db.query(StockPosition).filter(StockPosition.portfolio_id == portfolio_id).all()
@@ -81,17 +97,64 @@ class NewsService:
                 symbols.append(yahoo_symbol)
         return symbols
 
-    def _fcn_symbols(self, portfolio_id: str) -> list[str]:
+    def _fcn_context(self, portfolio_id: str) -> dict:
         fcns = self.db.query(FCNPosition).filter(FCNPosition.portfolio_id == portfolio_id).all()
         monitor = FCNMonitorService()
-        symbols: list[str] = []
+        symbols: set[str] = set()
+        fcn_codes_by_symbol: dict[str, set[str]] = {}
+        worst_of_symbols: set[str] = set()
         for fcn in fcns:
+            fcn_code = str(getattr(fcn, "fcn_code", None) or getattr(fcn, "name", None) or "FCN").strip()
             try:
                 underlyings = monitor.parse_underlyings(fcn)
-                symbols.extend(str(item.get("symbol") or "").strip().upper() for item in underlyings)
+                parsed_symbols = [
+                    str(item.get("symbol") or "").strip().upper()
+                    for item in underlyings
+                    if str(item.get("symbol") or "").strip()
+                ]
             except Exception:
-                symbols.extend(self._parse_fcn_underlyings_text(getattr(fcn, "underlyings", None)))
-        return symbols
+                parsed_symbols = self._parse_fcn_underlyings_text(getattr(fcn, "underlyings", None))
+
+            for symbol in parsed_symbols:
+                symbols.add(symbol)
+                fcn_codes_by_symbol.setdefault(symbol, set()).add(fcn_code)
+
+            worst_symbol = str(getattr(fcn, "worst_of_symbol", None) or "").strip().upper()
+            if worst_symbol:
+                worst_of_symbols.add(worst_symbol)
+                symbols.add(worst_symbol)
+                fcn_codes_by_symbol.setdefault(worst_symbol, set()).add(fcn_code)
+
+        return {
+            "fcn_underlying_symbols": symbols,
+            "fcn_codes_by_symbol": fcn_codes_by_symbol,
+            "worst_of_symbols": worst_of_symbols,
+        }
+
+    def _rank_and_limit_articles(
+        self,
+        articles: list[NewsArticle],
+        max_total: int,
+        per_symbol_count: dict[str, int],
+    ) -> list[NewsArticle]:
+        ranked = sorted(
+            articles,
+            key=lambda article: (
+                float(article.relevance_score or 0),
+                str(article.published_at or ""),
+            ),
+            reverse=True,
+        )
+        selected: list[NewsArticle] = []
+        for article in ranked:
+            symbol = str(article.symbol or "").upper()
+            if per_symbol_count.get(symbol, 0) >= 2:
+                continue
+            per_symbol_count[symbol] = per_symbol_count.get(symbol, 0) + 1
+            selected.append(article)
+            if len(selected) >= max_total:
+                break
+        return selected
 
     def _parse_fcn_underlyings_text(self, raw_value) -> list[str]:
         if raw_value is None:
