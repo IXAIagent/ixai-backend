@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -22,6 +24,9 @@ class NewsArticle(BaseModel):
     risk_direction: str = "NEUTRAL"
     attention_level: str = "LOW"
     portfolio_impact_summary: str = ""
+    priority_score: int = 0
+    priority_level: str = "LOW"
+    alert_summary: str = ""
 
 
 class PortfolioNewsResponse(BaseModel):
@@ -30,4 +35,12 @@ class PortfolioNewsResponse(BaseModel):
     articles: list[NewsArticle] = Field(default_factory=list)
     summary: str
     fetched_at: str
+    is_stale: bool = False
+
+
+class PortfolioPriorityResponse(BaseModel):
+    top_alerts: list[NewsArticle] = Field(default_factory=list)
+    critical_count: int = 0
+    high_count: int = 0
+    generated_at: datetime
     is_stale: bool = False

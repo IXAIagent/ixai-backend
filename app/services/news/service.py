@@ -11,9 +11,10 @@ from app.models.models import CryptoPosition, FCNPosition, Portfolio, StockPosit
 from app.services.fcn_monitor_service import FCNMonitorService
 from app.services.market_data.base import utc_now_iso
 from app.services.news.impact_engine import PortfolioImpactEngine
+from app.services.news.priority_engine import PortfolioPriorityEngine
 from app.services.news.providers.yfinance_provider import YFinanceNewsProvider
 from app.services.news.relevance_engine import RelevanceEngine
-from app.services.news.schemas import NewsArticle, PortfolioNewsResponse
+from app.services.news.schemas import NewsArticle, PortfolioNewsResponse, PortfolioPriorityResponse
 from app.services.normalization import get_crypto_yahoo_fallback_symbol, normalize_crypto_symbol
 
 logger = logging.getLogger(__name__)
@@ -26,11 +27,13 @@ class NewsService:
         provider: YFinanceNewsProvider | None = None,
         relevance_engine: RelevanceEngine | None = None,
         impact_engine: PortfolioImpactEngine | None = None,
+        priority_engine: PortfolioPriorityEngine | None = None,
     ) -> None:
         self.db = db
         self.provider = provider or YFinanceNewsProvider()
         self.relevance_engine = relevance_engine or RelevanceEngine()
         self.impact_engine = impact_engine or PortfolioImpactEngine()
+        self.priority_engine = priority_engine or PortfolioPriorityEngine()
 
     def get_portfolio_news(self, portfolio: Portfolio) -> PortfolioNewsResponse:
         context = self._build_portfolio_context(portfolio)
@@ -61,6 +64,7 @@ class NewsService:
                 logger.warning("Portfolio news failed for %s: %s", symbol, exc)
 
         articles = self._rank_and_limit_articles(articles, max_total, per_symbol_count)
+        articles = self.priority_engine.enrich_articles(articles)
 
         return PortfolioNewsResponse(
             portfolio_id=str(portfolio.id),
@@ -70,6 +74,13 @@ class NewsService:
             fetched_at=utc_now_iso(),
             is_stale=False,
         )
+
+    def get_portfolio_priority(self, portfolio: Portfolio) -> PortfolioPriorityResponse:
+        try:
+            articles = self.get_portfolio_news(portfolio).articles
+            return self.priority_engine.build_priority_response(articles)
+        except Exception:
+            return self.priority_engine.build_priority_response([])
 
     def _build_portfolio_context(self, portfolio: Portfolio) -> dict:
         stock_context = self._stock_context(portfolio.id)
