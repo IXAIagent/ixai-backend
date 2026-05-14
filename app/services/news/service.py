@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.models.models import CryptoPosition, FCNPosition, Portfolio, StockPosition
 from app.services.fcn_monitor_service import FCNMonitorService
 from app.services.market_data.base import utc_now_iso
+from app.services.news.impact_engine import PortfolioImpactEngine
 from app.services.news.providers.yfinance_provider import YFinanceNewsProvider
 from app.services.news.relevance_engine import RelevanceEngine
 from app.services.news.schemas import NewsArticle, PortfolioNewsResponse
@@ -24,10 +25,12 @@ class NewsService:
         db: Session,
         provider: YFinanceNewsProvider | None = None,
         relevance_engine: RelevanceEngine | None = None,
+        impact_engine: PortfolioImpactEngine | None = None,
     ) -> None:
         self.db = db
         self.provider = provider or YFinanceNewsProvider()
         self.relevance_engine = relevance_engine or RelevanceEngine()
+        self.impact_engine = impact_engine or PortfolioImpactEngine()
 
     def get_portfolio_news(self, portfolio: Portfolio) -> PortfolioNewsResponse:
         context = self._build_portfolio_context(portfolio)
@@ -47,6 +50,11 @@ class NewsService:
                     seen_links.add(key)
                     article.symbol = str(article.symbol or symbol).strip().upper()
                     article = self.relevance_engine.analyze(article, context)
+                    impact = self.impact_engine.analyze(article, context)
+                    article.portfolio_exposure = impact["portfolio_exposure"]
+                    article.risk_direction = impact["risk_direction"]
+                    article.attention_level = impact["attention_level"]
+                    article.portfolio_impact_summary = impact["portfolio_impact_summary"]
                     article.narrative = self._generate_narrative(article)
                     articles.append(article)
             except Exception as exc:
@@ -64,30 +72,60 @@ class NewsService:
         )
 
     def _build_portfolio_context(self, portfolio: Portfolio) -> dict:
-        stock_symbols = set(self._stock_symbols(portfolio.id))
-        crypto_symbols = set(self._crypto_symbols(portfolio.id))
+        stock_context = self._stock_context(portfolio.id)
+        crypto_context = self._crypto_context(portfolio.id)
         fcn_context = self._fcn_context(portfolio.id)
+        total_value = (
+            stock_context["total_value"]
+            + crypto_context["total_value"]
+            + fcn_context["total_value"]
+        )
         symbols = list(dict.fromkeys([
-            *stock_symbols,
-            *crypto_symbols,
+            *stock_context["symbols"],
+            *crypto_context["symbols"],
             *fcn_context["fcn_underlying_symbols"],
         ]))
+        exposure_ratio_by_symbol = self._exposure_ratios(
+            total_value,
+            stock_context["value_by_symbol"],
+            crypto_context["value_by_symbol"],
+            fcn_context["value_by_symbol"],
+        )
         return {
             "symbols": symbols,
-            "stock_symbols": stock_symbols,
-            "crypto_symbols": crypto_symbols,
+            "stock_symbols": stock_context["symbols"],
+            "crypto_symbols": crypto_context["symbols"],
             "fcn_underlying_symbols": fcn_context["fcn_underlying_symbols"],
             "fcn_codes_by_symbol": fcn_context["fcn_codes_by_symbol"],
             "worst_of_symbols": fcn_context["worst_of_symbols"],
+            "crypto_leverage_by_symbol": crypto_context["leverage_by_symbol"],
+            "exposure_ratio_by_symbol": exposure_ratio_by_symbol,
         }
 
-    def _stock_symbols(self, portfolio_id: str) -> list[str]:
+    def _stock_context(self, portfolio_id: str) -> dict:
         stocks = self.db.query(StockPosition).filter(StockPosition.portfolio_id == portfolio_id).all()
-        return [str(stock.symbol or "").strip().upper() for stock in stocks if str(stock.symbol or "").strip()]
+        symbols: set[str] = set()
+        value_by_symbol: dict[str, float] = {}
+        total_value = 0.0
+        for stock in stocks:
+            symbol = str(stock.symbol or "").strip().upper()
+            if not symbol:
+                continue
+            value = self._position_value(stock)
+            symbols.add(symbol)
+            value_by_symbol[symbol] = value_by_symbol.get(symbol, 0) + value
+            total_value += value
+        return {"symbols": symbols, "value_by_symbol": value_by_symbol, "total_value": total_value}
 
-    def _crypto_symbols(self, portfolio_id: str) -> list[str]:
+    def _stock_symbols(self, portfolio_id: str) -> list[str]:
+        return list(self._stock_context(portfolio_id)["symbols"])
+
+    def _crypto_context(self, portfolio_id: str) -> dict:
         cryptos = self.db.query(CryptoPosition).filter(CryptoPosition.portfolio_id == portfolio_id).all()
-        symbols: list[str] = []
+        symbols: set[str] = set()
+        value_by_symbol: dict[str, float] = {}
+        leverage_by_symbol: dict[str, float] = {}
+        total_value = 0.0
         for crypto in cryptos:
             raw_symbol = str(crypto.symbol or "").strip().upper()
             if not raw_symbol:
@@ -95,8 +133,23 @@ class NewsService:
             normalized = normalize_crypto_symbol(raw_symbol)
             yahoo_symbol = get_crypto_yahoo_fallback_symbol(normalized)
             if yahoo_symbol:
-                symbols.append(yahoo_symbol)
-        return symbols
+                value = self._position_value(crypto)
+                symbols.add(yahoo_symbol)
+                value_by_symbol[yahoo_symbol] = value_by_symbol.get(yahoo_symbol, 0) + value
+                leverage_by_symbol[yahoo_symbol] = max(
+                    leverage_by_symbol.get(yahoo_symbol, 0),
+                    self._safe_float(getattr(crypto, "leverage", 0)),
+                )
+                total_value += value
+        return {
+            "symbols": symbols,
+            "value_by_symbol": value_by_symbol,
+            "leverage_by_symbol": leverage_by_symbol,
+            "total_value": total_value,
+        }
+
+    def _crypto_symbols(self, portfolio_id: str) -> list[str]:
+        return list(self._crypto_context(portfolio_id)["symbols"])
 
     def _fcn_context(self, portfolio_id: str) -> dict:
         fcns = self.db.query(FCNPosition).filter(FCNPosition.portfolio_id == portfolio_id).all()
@@ -104,8 +157,11 @@ class NewsService:
         symbols: set[str] = set()
         fcn_codes_by_symbol: dict[str, set[str]] = {}
         worst_of_symbols: set[str] = set()
+        value_by_symbol: dict[str, float] = {}
+        total_value = 0.0
         for fcn in fcns:
             fcn_code = str(getattr(fcn, "fcn_code", None) or getattr(fcn, "name", None) or "FCN").strip()
+            notional = self._fcn_notional(fcn)
             try:
                 underlyings = monitor.parse_underlyings(fcn)
                 parsed_symbols = [
@@ -119,18 +175,52 @@ class NewsService:
             for symbol in parsed_symbols:
                 symbols.add(symbol)
                 fcn_codes_by_symbol.setdefault(symbol, set()).add(fcn_code)
+                if parsed_symbols:
+                    value_by_symbol[symbol] = value_by_symbol.get(symbol, 0) + (notional / len(parsed_symbols))
 
             worst_symbol = str(getattr(fcn, "worst_of_symbol", None) or "").strip().upper()
             if worst_symbol:
                 worst_of_symbols.add(worst_symbol)
                 symbols.add(worst_symbol)
                 fcn_codes_by_symbol.setdefault(worst_symbol, set()).add(fcn_code)
+                value_by_symbol[worst_symbol] = max(value_by_symbol.get(worst_symbol, 0), notional)
+            total_value += notional
 
         return {
             "fcn_underlying_symbols": symbols,
             "fcn_codes_by_symbol": fcn_codes_by_symbol,
             "worst_of_symbols": worst_of_symbols,
+            "value_by_symbol": value_by_symbol,
+            "total_value": total_value,
         }
+
+    def _exposure_ratios(self, total_value: float, *value_maps: dict[str, float]) -> dict[str, float]:
+        if total_value <= 0:
+            return {}
+        ratios: dict[str, float] = {}
+        for value_map in value_maps:
+            for symbol, value in value_map.items():
+                ratios[symbol] = ratios.get(symbol, 0) + (float(value or 0) / total_value)
+        return ratios
+
+    def _position_value(self, position) -> float:
+        quantity = self._safe_float(getattr(position, "quantity", 0))
+        price = (
+            self._safe_float(getattr(position, "current_price", 0))
+            or self._safe_float(getattr(position, "avg_price", 0))
+        )
+        return quantity * price
+
+    def _fcn_notional(self, fcn: FCNPosition) -> float:
+        notional_amount = getattr(fcn, "notional_amount", None)
+        notional = getattr(fcn, "notional", None)
+        return self._safe_float(notional_amount if notional_amount is not None else notional)
+
+    def _safe_float(self, value) -> float:
+        try:
+            return float(value or 0)
+        except (TypeError, ValueError):
+            return 0.0
 
     def _rank_and_limit_articles(
         self,

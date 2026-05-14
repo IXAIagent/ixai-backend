@@ -18,6 +18,10 @@ class NewsArticle(BaseModel):
     is_fcn_related: bool = False
     related_fcn_codes: list[str] = Field(default_factory=list)
     narrative: str = ""
+    portfolio_exposure: str = "LOW"
+    risk_direction: str = "NEUTRAL"
+    attention_level: str = "LOW"
+    portfolio_impact_summary: str = ""
 
 
 class PortfolioNewsResponse(BaseModel):
