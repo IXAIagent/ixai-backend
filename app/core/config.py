@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_CHAT_ID: str = ""
     TELEGRAM_ENABLED: bool = False
+    NEWS_CACHE_TTL: int = 3600
+    NEWS_MAX_ARTICLES_PER_SYMBOL: int = 5
+    NEWS_MAX_TOTAL_ARTICLES: int = 20
 
     @property
     def cors_origins(self) -> list[str]:
