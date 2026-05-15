@@ -42,8 +42,15 @@ class YFinanceNewsProvider:
             articles = [article for article in articles if article is not None]
             self._cache[cache_key] = articles
             return articles
-        except Exception as exc:
-            logger.warning("yfinance news lookup failed for %s: %s", normalized_symbol, exc)
+        except Exception:
+            logger.exception(
+                "news provider failure",
+                extra={
+                    "provider": "yfinance",
+                    "operation": "news_lookup",
+                    "symbol": normalized_symbol,
+                },
+            )
             return []
 
     def _to_article(self, symbol: str, item: Any) -> NewsArticle | None:

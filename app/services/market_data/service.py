@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 import time
 from typing import Literal
+
+logger = logging.getLogger(__name__)
 
 try:
     from cachetools import TTLCache
@@ -176,24 +179,45 @@ class MarketDataService:
         return normalize_crypto_symbol(symbol)
 
     def _safe_provider_get(self, provider, symbol: str) -> MarketPriceResult:
+        provider_name = self._provider_source(provider)
         try:
             result = provider.get_price(symbol)
             if isinstance(result, MarketPriceResult):
+                # Surface upstream-reported errors (provider already swallowed them).
+                if result.price is None and result.error:
+                    logger.warning(
+                        "market provider returned no price",
+                        extra={
+                            "provider": provider_name,
+                            "operation": "get_price",
+                            "symbol": symbol,
+                            "error_type": "no_price",
+                        },
+                    )
                 return result
 
             price = float(result)
             return MarketPriceResult(
                 symbol=symbol,
                 price=price,
-                source=self._provider_source(provider),
+                source=provider_name,
                 updated_at=utc_now_iso(),
                 error=None,
             )
         except Exception as exc:
+            logger.exception(
+                "market provider failure",
+                extra={
+                    "provider": provider_name,
+                    "operation": "get_price",
+                    "symbol": symbol,
+                    "error_type": type(exc).__name__,
+                },
+            )
             return MarketPriceResult(
                 symbol=symbol,
                 price=None,
-                source=self._provider_source(provider),
+                source=provider_name,
                 updated_at=utc_now_iso(),
                 error=str(exc),
             )

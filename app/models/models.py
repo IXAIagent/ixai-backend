@@ -207,4 +207,8 @@ class IntelligenceMemorySnapshot(Base):
     workspace_mode = Column(String, nullable=True)
     total_score = Column(Float, nullable=True)
     risk_drift = Column(String, nullable=True)
+    regime = Column(String, nullable=True)
+    concentration_score = Column(Float, nullable=True)
+    dominant_driver = Column(String, nullable=True)
+    volatility_state = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True, nullable=False)

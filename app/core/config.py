@@ -64,6 +64,12 @@ class Settings(BaseSettings):
     CLAUDE_MODEL: str = "claude-sonnet-4-5"
     INTELLIGENCE_AI_NARRATIVE: bool = False
 
+    # Observability (v1C). All optional; absence disables Sentry without error.
+    SENTRY_DSN: str | None = None
+    SENTRY_TRACES_SAMPLE_RATE: float = 0.05
+    SENTRY_PROFILES_SAMPLE_RATE: float = 0.0
+    LOG_LEVEL: str = "INFO"
+
     @property
     def cors_origins(self) -> list[str]:
         return [

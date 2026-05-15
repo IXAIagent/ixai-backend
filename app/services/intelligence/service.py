@@ -11,7 +11,10 @@ from app.services.intelligence.brief_engine import IntelligenceBriefEngine
 from app.services.intelligence.correlation_engine import IntelligenceCorrelationEngine
 from app.services.intelligence.copilot_service import IXAICopilotService
 from app.services.intelligence.dna_engine import PortfolioDNAEngine
+from app.services.intelligence.drift_engine_v2 import DriftDetectionV2Engine
 from app.services.intelligence.enrichment_engine import IntelligenceEnrichmentEngine
+from app.services.intelligence.explainability_engine import ExplainabilityEngine
+from app.services.intelligence.exposure_engine import ExposureIntelligenceEngine
 from app.services.intelligence.graph_engine import IntelligenceGraphEngine
 from app.services.intelligence.long_memory import LongTermMemoryEngine
 from app.services.intelligence.memory_service import IntelligenceMemoryService
@@ -19,8 +22,9 @@ from app.services.intelligence.narrative_engine import IntelligenceNarrativeEngi
 from app.services.intelligence.persistent_memory import IntelligenceMemoryStore
 from app.services.intelligence.predictive_engine import PredictiveDriftEngine
 from app.services.intelligence.reasoning_engine import IntelligenceReasoningEngine
+from app.services.intelligence.regime_engine import PortfolioRegimeEngine
 from app.services.intelligence.scenario_engine import ScenarioEngine
-from app.services.intelligence.schemas import PortfolioIntelligenceResponse, ReasoningSystemResponse
+from app.services.intelligence.schemas import PortfolioIntelligenceResponse, PortfolioSummaryV2AResponse, ReasoningSystemResponse
 from app.services.intelligence.scoring_engine import IntelligenceScoringEngine
 from app.services.intelligence.theme_engine import ThemeEvolutionEngine
 from app.services.intelligence.timeline_engine import IntelligenceTimelineEngine
@@ -36,6 +40,10 @@ class PortfolioIntelligenceService:
         self.priority_engine = PortfolioPriorityEngine()
         self.scoring_engine = IntelligenceScoringEngine()
         self.enrichment_engine = IntelligenceEnrichmentEngine()
+        self.exposure_engine = ExposureIntelligenceEngine()
+        self.regime_engine = PortfolioRegimeEngine()
+        self.drift_v2_engine = DriftDetectionV2Engine()
+        self.explainability_engine = ExplainabilityEngine()
         self.correlation_engine = IntelligenceCorrelationEngine()
         self.workspace_engine = WorkspaceDecisionEngine()
         self.narrative_engine = IntelligenceNarrativeEngine()
@@ -88,6 +96,12 @@ class PortfolioIntelligenceService:
                 workspace,
                 narrative,
                 alerts,
+                metadata={
+                    "regime": workspace.market_regime,
+                    "concentration_score": 0,
+                    "dominant_driver": workspace.primary_focus,
+                    "volatility_state": "ELEVATED" if scores.crypto_vol_score >= 45 or scores.macro_risk_score >= 45 else "NORMAL",
+                },
             )
 
             return PortfolioIntelligenceResponse(
@@ -101,6 +115,67 @@ class PortfolioIntelligenceService:
             )
         except Exception:
             return PortfolioIntelligenceResponse(
+                generated_at=datetime.now(timezone.utc),
+                is_stale=True,
+            )
+
+    def get_portfolio_summary_v2a(self, portfolio: Portfolio) -> PortfolioSummaryV2AResponse:
+        try:
+            context = self._analysis_context(portfolio)
+            portfolio_payload = context["portfolio_payload"]
+            articles = context["articles"]
+            scores = context["scores"]
+            fcn_analysis = context["fcn_analysis"]
+            priority_response = context["priority_response"]
+            history = self.persistent_memory.get_recent_history(str(portfolio.id), limit=10)
+            exposure = self.exposure_engine.analyze(portfolio_payload, fcn_analysis)
+            regime = self.regime_engine.detect(portfolio_payload, scores, articles, fcn_analysis, exposure)
+            narrative_text = " ".join(str(article.narrative or article.portfolio_impact_summary or "") for article in articles[:5])
+            drift = self.drift_v2_engine.detect(regime, exposure, narrative_text, history)
+            explainability = self.explainability_engine.explain(regime, exposure, drift, articles, fcn_analysis)
+            top_alerts = [
+                str(article.alert_summary or article.title or article.symbol)
+                for article in list(priority_response.top_alerts or [])[:5]
+            ]
+            confidence = min(100.0, 35.0 + scores.portfolio_relevance_score * 0.3 + len(articles) * 2)
+            workspace = self.workspace_engine.decide(
+                scores,
+                critical_count=int(priority_response.critical_count or 0),
+                high_count=int(priority_response.high_count or 0),
+            )
+            narrative = self.narrative_engine.narrate(
+                scores,
+                workspace,
+                articles,
+                context["correlations"],
+                what_changed_today=drift["drift_summary"],
+            )
+            self.persistent_memory.append_snapshot(
+                str(portfolio.id),
+                scores,
+                workspace,
+                narrative,
+                list(priority_response.top_alerts or []),
+                metadata={
+                    "regime": regime,
+                    "concentration_score": exposure.get("concentration_score", 0),
+                    "dominant_driver": explainability.dominant_driver,
+                    "volatility_state": drift.get("volatility_state"),
+                },
+            )
+            return PortfolioSummaryV2AResponse(
+                regime=regime,
+                dominant_risk=explainability.dominant_driver or "No dominant risk",
+                concentration_score=float(exposure.get("concentration_score", 0) or 0),
+                drift_summary=drift["drift_summary"],
+                explainability=explainability,
+                top_alerts=top_alerts,
+                intelligence_confidence=round(confidence, 2),
+                generated_at=datetime.now(timezone.utc),
+                is_stale=False,
+            )
+        except Exception:
+            return PortfolioSummaryV2AResponse(
                 generated_at=datetime.now(timezone.utc),
                 is_stale=True,
             )

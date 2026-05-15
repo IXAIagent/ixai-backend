@@ -30,8 +30,15 @@ class ClaudeSummaryProvider:
 
         try:
             from anthropic import Anthropic
-        except Exception as exc:
-            logger.warning("Anthropic SDK unavailable, using rule-based summary: %s", exc)
+        except Exception:
+            logger.exception(
+                "ai provider failure",
+                extra={
+                    "provider": "anthropic",
+                    "operation": "sdk_import",
+                    "symbol": getattr(article, "symbol", None),
+                },
+            )
             return self.fallback.summarize_article(article, context)
 
         try:
@@ -55,8 +62,16 @@ class ClaudeSummaryProvider:
             )
             text = self._message_text(message)
             return self._sanitize(text) or self.fallback.summarize_article(article, context)
-        except Exception as exc:
-            logger.warning("Claude summary failed, using rule-based summary: %s", exc)
+        except Exception:
+            logger.exception(
+                "ai provider failure",
+                extra={
+                    "provider": "anthropic",
+                    "operation": "summarize_article",
+                    "symbol": getattr(article, "symbol", None),
+                    "model": self.model,
+                },
+            )
             return self.fallback.summarize_article(article, context)
 
     def _prompt(self, article: NewsArticle, context: dict) -> str:

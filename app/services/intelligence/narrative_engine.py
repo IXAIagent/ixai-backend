@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from app.services.intelligence.schemas import (
     IntelligenceCorrelation,
     IntelligenceNarrative,
@@ -9,6 +11,8 @@ from app.services.intelligence.schemas import (
 from app.services.news.schemas import NewsArticle
 from app.core.config import settings
 from app.services.intelligence.compliance import compliance_filter
+
+logger = logging.getLogger(__name__)
 
 
 class ClaudeNarrativeProvider:
@@ -57,6 +61,15 @@ class ClaudeNarrativeProvider:
                 what_changed_today=compliance_filter.sanitize_text(data.get("what_changed_today"), max_length=160),
             )
         except Exception:
+            logger.exception(
+                "ai provider failure",
+                extra={
+                    "provider": "anthropic",
+                    "operation": "generate_narrative",
+                    "model": settings.CLAUDE_MODEL,
+                    "workspace_mode": getattr(workspace, "workspace_mode", None),
+                },
+            )
             return None
 
 

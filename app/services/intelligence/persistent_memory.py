@@ -56,9 +56,10 @@ class IntelligenceMemoryStore:
         workspace: WorkspaceDecision,
         narrative: IntelligenceNarrative,
         top_alerts: list[NewsArticle],
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         try:
-            payload = self._build_payload(scores, workspace, narrative, top_alerts)
+            payload = self._build_payload(scores, workspace, narrative, top_alerts, metadata or {})
         except Exception:
             logger.exception("intelligence_memory snapshot build failed")
             return
@@ -71,6 +72,10 @@ class IntelligenceMemoryStore:
                 workspace_mode=str(workspace.workspace_mode or "") or None,
                 total_score=self._float(getattr(scores, "total_score", None)),
                 risk_drift=str(workspace.risk_drift or "") or None,
+                regime=str((metadata or {}).get("regime") or "") or None,
+                concentration_score=self._float((metadata or {}).get("concentration_score")),
+                dominant_driver=str((metadata or {}).get("dominant_driver") or "") or None,
+                volatility_state=str((metadata or {}).get("volatility_state") or "") or None,
             )
             db.add(record)
             db.commit()
@@ -93,11 +98,16 @@ class IntelligenceMemoryStore:
         workspace: WorkspaceDecision,
         narrative: IntelligenceNarrative,
         top_alerts: list[NewsArticle],
+        metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         return {
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "workspace_mode": workspace.workspace_mode,
             "risk_drift": workspace.risk_drift,
+            "regime": (metadata or {}).get("regime"),
+            "concentration_score": (metadata or {}).get("concentration_score"),
+            "dominant_driver": (metadata or {}).get("dominant_driver"),
+            "volatility_state": (metadata or {}).get("volatility_state"),
             "scores": scores.model_dump(),
             "narrative": {
                 key: compliance_filter.sanitize_text(value)

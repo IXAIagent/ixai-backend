@@ -11,7 +11,17 @@ except ModuleNotFoundError:
     from app.api.v1.router import api_router
 from app.core.config import is_development_env, settings
 from app.core.database import Base, engine
+from app.core.observability import (
+    RequestIDMiddleware,
+    RequestLatencyMiddleware,
+    configure_logging,
+    init_sentry,
+)
 import app.models.models  # noqa: F401
+
+# Configure structured logging before any module-level loggers emit so the
+# first lines have request_id / formatter applied.
+configure_logging()
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +72,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Latency logging wraps CORS-and-below so we measure the full handler time.
+# RequestID is added last so it executes first on each request, ensuring the
+# id is in scope for every downstream layer (including latency logs).
+app.add_middleware(RequestLatencyMiddleware)
+app.add_middleware(RequestIDMiddleware)
+
 
 @app.get("/")
 def root():
@@ -78,18 +94,23 @@ def readyz():
     try:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
-        return {"status": "ready", "database": "ok"}
+        return {"status": "ready", "database": "ok", "app": settings.PROJECT_NAME}
     except Exception:
         logger.exception("readyz database ping failed")
         return JSONResponse(
             status_code=503,
-            content={"status": "not_ready", "database": "error"},
+            content={
+                "status": "not_ready",
+                "database": "error",
+                "app": settings.PROJECT_NAME,
+            },
         )
 
 
 @app.on_event("startup")
 def init_db_tables():
     settings.validate_runtime_security()
+    init_sentry()
     if should_run_create_all():
         logger.warning(
             "Using create_all in development/local only. Production must use Alembic."

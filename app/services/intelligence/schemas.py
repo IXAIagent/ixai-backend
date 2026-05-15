@@ -170,3 +170,23 @@ class ReasoningSystemResponse(BaseModel):
     dna: PortfolioDNA = Field(default_factory=PortfolioDNA)
     generated_at: datetime
     is_stale: bool = False
+
+
+class ExplainabilitySummary(BaseModel):
+    why_risk_increased: str = ""
+    what_changed_today: str = ""
+    dominant_driver: str = ""
+    hidden_correlation: str = ""
+    systemic_risk: str = ""
+
+
+class PortfolioSummaryV2AResponse(BaseModel):
+    regime: str = "DEFENSIVE"
+    dominant_risk: str = "No dominant risk"
+    concentration_score: float = 0
+    drift_summary: str = "No meaningful drift detected."
+    explainability: ExplainabilitySummary = Field(default_factory=ExplainabilitySummary)
+    top_alerts: list[str] = Field(default_factory=list)
+    intelligence_confidence: float = 0
+    generated_at: datetime
+    is_stale: bool = False

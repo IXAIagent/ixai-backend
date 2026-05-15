@@ -59,9 +59,11 @@ def test_readyz_returns_ready_when_db_ok():
     from app.main import readyz
 
     # Direct function call exercises the real DB ping path without requiring
-    # httpx/TestClient. Success path returns a plain dict.
+    # httpx/TestClient. v1C added an `app` field; assert the invariant subset
+    # so this test does not break when readyz payload is extended.
     result = readyz()
-    assert result == {"status": "ready", "database": "ok"}
+    assert result["status"] == "ready"
+    assert result["database"] == "ok"
 
 
 def test_readyz_returns_503_when_db_fails(monkeypatch):
