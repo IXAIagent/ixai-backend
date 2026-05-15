@@ -180,3 +180,31 @@ class ImportRow(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     batch = relationship("ImportBatch", back_populates="rows")
+
+
+class PushState(Base):
+    __tablename__ = "push_states"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.id"), index=True, nullable=True)
+    key = Column(String, unique=True, index=True, nullable=False)
+    value = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+
+class IntelligenceMemorySnapshot(Base):
+    __tablename__ = "intelligence_memory_snapshots"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    portfolio_id = Column(String, index=True, nullable=False)
+    snapshot = Column(Text, nullable=False)
+    workspace_mode = Column(String, nullable=True)
+    total_score = Column(Float, nullable=True)
+    risk_drift = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True, nullable=False)

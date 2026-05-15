@@ -1,20 +1,54 @@
+"""Intelligence long-term memory store backed by PostgreSQL.
+
+Replaces the legacy `data/intelligence_memory/{portfolio_id}.json` files
+with the `intelligence_memory_snapshots` table so memory survives Render
+restarts and is shared across workers.
+
+Preserves the public `IntelligenceMemoryStore` API
+(`append_snapshot`, `get_recent_history`, `compare_historical_drift`,
+`detect_trend`) so existing callers (`long_memory.py`, `service.py`) are
+unaffected.
+
+Fail-soft: every DB access is wrapped in try/except + `logger.exception`,
+so intelligence endpoints never 500 because of memory persistence errors.
+The `base_dir` constructor argument is accepted for backward compatibility
+but is no longer used.
+"""
+
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from app.core.database import SessionLocal
+from app.models.models import IntelligenceMemorySnapshot
 from app.services.intelligence.compliance import compliance_filter
-from app.services.intelligence.schemas import IntelligenceNarrative, IntelligenceScore, WorkspaceDecision
+from app.services.intelligence.schemas import (
+    IntelligenceNarrative,
+    IntelligenceScore,
+    WorkspaceDecision,
+)
 from app.services.news.schemas import NewsArticle
+
+logger = logging.getLogger(__name__)
 
 
 class IntelligenceMemoryStore:
-    def __init__(self, base_dir: Path | None = None, max_snapshots: int = 50) -> None:
-        self.base_dir = base_dir or Path(__file__).resolve().parents[3] / "data" / "intelligence_memory"
-        self.max_snapshots = max_snapshots
+    def __init__(
+        self,
+        base_dir: Path | None = None,
+        max_snapshots: int = 50,
+    ) -> None:
+        # base_dir retained for API compatibility; persistence is now via DB.
+        self.base_dir = base_dir
+        self.max_snapshots = max(1, int(max_snapshots or 1))
 
+    # ------------------------------------------------------------------
+    # write path
+    # ------------------------------------------------------------------
     def append_snapshot(
         self,
         portfolio_id: str,
@@ -24,54 +58,137 @@ class IntelligenceMemoryStore:
         top_alerts: list[NewsArticle],
     ) -> None:
         try:
-            self.base_dir.mkdir(parents=True, exist_ok=True)
-            path = self._path(portfolio_id)
-            history = self.get_recent_history(portfolio_id, limit=self.max_snapshots)
-            history.append({
-                "generated_at": datetime.now(timezone.utc).isoformat(),
-                "workspace_mode": workspace.workspace_mode,
-                "risk_drift": workspace.risk_drift,
-                "scores": scores.model_dump(),
-                "narrative": {
-                    key: compliance_filter.sanitize_text(value)
-                    for key, value in narrative.model_dump().items()
-                },
-                "top_alerts": [
-                    {
-                        "symbol": str(alert.symbol or ""),
-                        "priority_level": str(alert.priority_level or ""),
-                        "title": compliance_filter.sanitize_text(alert.title, max_length=160),
-                    }
-                    for alert in top_alerts[:5]
-                ],
-            })
-            path.write_text(
-                json.dumps({"portfolio_id": portfolio_id, "snapshots": history[-self.max_snapshots:]}, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
+            payload = self._build_payload(scores, workspace, narrative, top_alerts)
         except Exception:
+            logger.exception("intelligence_memory snapshot build failed")
             return
 
-    def get_recent_history(self, portfolio_id: str, limit: int = 10) -> list[dict[str, Any]]:
+        db = SessionLocal()
         try:
-            path = self._path(portfolio_id)
-            if not path.exists():
-                return []
-            data = json.loads(path.read_text(encoding="utf-8"))
-            snapshots = data.get("snapshots", [])
-            if not isinstance(snapshots, list):
-                return []
-            return snapshots[-limit:]
+            record = IntelligenceMemorySnapshot(
+                portfolio_id=str(portfolio_id),
+                snapshot=json.dumps(payload, ensure_ascii=False),
+                workspace_mode=str(workspace.workspace_mode or "") or None,
+                total_score=self._float(getattr(scores, "total_score", None)),
+                risk_drift=str(workspace.risk_drift or "") or None,
+            )
+            db.add(record)
+            db.commit()
+            self._trim_old_snapshots(db, str(portfolio_id))
         except Exception:
-            return []
+            logger.exception("intelligence_memory append failed")
+            try:
+                db.rollback()
+            except Exception:
+                pass
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
 
-    def compare_historical_drift(self, portfolio_id: str, current_scores: IntelligenceScore) -> str:
+    def _build_payload(
+        self,
+        scores: IntelligenceScore,
+        workspace: WorkspaceDecision,
+        narrative: IntelligenceNarrative,
+        top_alerts: list[NewsArticle],
+    ) -> dict[str, Any]:
+        return {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "workspace_mode": workspace.workspace_mode,
+            "risk_drift": workspace.risk_drift,
+            "scores": scores.model_dump(),
+            "narrative": {
+                key: compliance_filter.sanitize_text(value)
+                for key, value in narrative.model_dump().items()
+            },
+            "top_alerts": [
+                {
+                    "symbol": str(alert.symbol or ""),
+                    "priority_level": str(alert.priority_level or ""),
+                    "title": compliance_filter.sanitize_text(alert.title, max_length=160),
+                }
+                for alert in (top_alerts or [])[:5]
+            ],
+        }
+
+    def _trim_old_snapshots(self, db, portfolio_id: str) -> None:
+        try:
+            total = (
+                db.query(IntelligenceMemorySnapshot)
+                .filter(IntelligenceMemorySnapshot.portfolio_id == portfolio_id)
+                .count()
+            )
+            if total <= self.max_snapshots:
+                return
+            excess = total - self.max_snapshots
+            oldest_ids = [
+                row.id
+                for row in (
+                    db.query(IntelligenceMemorySnapshot.id)
+                    .filter(IntelligenceMemorySnapshot.portfolio_id == portfolio_id)
+                    .order_by(IntelligenceMemorySnapshot.created_at.asc())
+                    .limit(excess)
+                    .all()
+                )
+            ]
+            if oldest_ids:
+                db.query(IntelligenceMemorySnapshot).filter(
+                    IntelligenceMemorySnapshot.id.in_(oldest_ids)
+                ).delete(synchronize_session=False)
+                db.commit()
+        except Exception:
+            logger.exception("intelligence_memory trim failed")
+            try:
+                db.rollback()
+            except Exception:
+                pass
+
+    # ------------------------------------------------------------------
+    # read path
+    # ------------------------------------------------------------------
+    def get_recent_history(self, portfolio_id: str, limit: int = 10) -> list[dict[str, Any]]:
+        clamped_limit = max(1, int(limit or 1))
+        db = SessionLocal()
+        try:
+            rows = (
+                db.query(IntelligenceMemorySnapshot)
+                .filter(IntelligenceMemorySnapshot.portfolio_id == str(portfolio_id))
+                .order_by(IntelligenceMemorySnapshot.created_at.desc())
+                .limit(clamped_limit)
+                .all()
+            )
+            # newest-first from DB; reverse so callers see oldest within
+            # the recent-N window first (matches legacy JSON-file behaviour).
+            rows.reverse()
+            result: list[dict[str, Any]] = []
+            for row in rows:
+                try:
+                    parsed = json.loads(row.snapshot or "{}")
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                if isinstance(parsed, dict):
+                    result.append(parsed)
+            return result
+        except Exception:
+            logger.exception("intelligence_memory read failed")
+            return []
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+    def compare_historical_drift(
+        self, portfolio_id: str, current_scores: IntelligenceScore
+    ) -> str:
         history = self.get_recent_history(portfolio_id, limit=5)
         if not history:
             return "目前沒有可比較的 persistent memory，已建立第一筆風險記憶。"
-        previous_scores = history[-1].get("scores", {})
+        previous_scores = history[-1].get("scores", {}) or {}
         previous_total = self._float(previous_scores.get("total_score"))
-        delta = current_scores.total_score - previous_total
+        delta = self._float(getattr(current_scores, "total_score", 0)) - previous_total
         if delta >= 10:
             return "相較上一筆記憶，整體 intelligence 風險分數上升。"
         if delta <= -10:
@@ -80,7 +197,9 @@ class IntelligenceMemoryStore:
 
     def detect_trend(self, portfolio_id: str) -> str:
         history = self.get_recent_history(portfolio_id, limit=5)
-        totals = [self._float(item.get("scores", {}).get("total_score")) for item in history]
+        totals = [
+            self._float((item.get("scores") or {}).get("total_score")) for item in history
+        ]
         if len(totals) < 3:
             return "INSUFFICIENT_HISTORY"
         if totals[-1] > totals[0] + 10:
@@ -89,11 +208,8 @@ class IntelligenceMemoryStore:
             return "COOLING_RISK"
         return "STABLE"
 
-    def _path(self, portfolio_id: str) -> Path:
-        safe_id = "".join(ch for ch in str(portfolio_id) if ch.isalnum() or ch in {"-", "_"})
-        return self.base_dir / f"{safe_id}.json"
-
-    def _float(self, value: Any) -> float:
+    @staticmethod
+    def _float(value: Any) -> float:
         try:
             return float(value or 0)
         except (TypeError, ValueError):
