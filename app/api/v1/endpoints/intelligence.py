@@ -2,8 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
+from app.core.config import is_development_env
 from app.core.database import get_db
 from app.models.models import Portfolio, User
+from app.scheduler.intelligence_runner import run_intelligence_scheduler_once
 from app.services.intelligence.schemas import (
     CopilotExplainRequest,
     CopilotExplainResponse,
@@ -71,6 +73,14 @@ def get_portfolio_summary_v2a(
         raise HTTPException(status_code=404, detail="Current user has no portfolio")
 
     return PortfolioIntelligenceService(db).get_portfolio_summary_v2a(portfolio)
+
+
+@router.post("/admin/run-scheduler-once")
+def run_intelligence_scheduler_admin_once(db: Session = Depends(get_db)):
+    if not is_development_env():
+        raise HTTPException(status_code=403, detail="Scheduler admin endpoint is development-only")
+
+    return run_intelligence_scheduler_once(db=db, source="admin_endpoint")
 
 
 @router.get("/reasoning", response_model=ReasoningSystemResponse)

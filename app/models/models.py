@@ -212,3 +212,16 @@ class IntelligenceMemorySnapshot(Base):
     dominant_driver = Column(String, nullable=True)
     volatility_state = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True, nullable=False)
+
+
+class IntelligenceRunLog(Base):
+    __tablename__ = "intelligence_run_logs"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    portfolio_id = Column(String, ForeignKey("portfolios.id"), index=True, nullable=True)
+    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    finished_at = Column(DateTime, nullable=True)
+    status = Column(String, index=True, nullable=False)
+    error = Column(Text, nullable=True)
+    source = Column(String, default="scheduler", nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True, nullable=False)

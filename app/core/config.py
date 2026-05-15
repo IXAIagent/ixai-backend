@@ -63,6 +63,9 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str | None = None
     CLAUDE_MODEL: str = "claude-sonnet-4-5"
     INTELLIGENCE_AI_NARRATIVE: bool = False
+    INTELLIGENCE_SCHEDULER_ENABLED: bool = False
+    INTELLIGENCE_SCHEDULER_BATCH_LIMIT: int = 100
+    INTELLIGENCE_SCHEDULER_INTERVAL_MINUTES: int = 60
 
     # Observability (v1C). All optional; absence disables Sentry without error.
     SENTRY_DSN: str | None = None
