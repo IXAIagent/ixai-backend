@@ -21,6 +21,36 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     portfolios = relationship("Portfolio", back_populates="user", cascade="all, delete-orphan")
+    owned_accounts = relationship("Account", back_populates="owner_user", cascade="all, delete-orphan")
+    account_memberships = relationship("AccountMembership", back_populates="user", cascade="all, delete-orphan")
+
+
+class Account(Base):
+    __tablename__ = "accounts"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    name = Column(String, nullable=False)
+    owner_user_id = Column(String, ForeignKey("users.id"), index=True, nullable=False)
+    account_type = Column(String, default="individual", nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    owner_user = relationship("User", back_populates="owned_accounts")
+    memberships = relationship("AccountMembership", back_populates="account", cascade="all, delete-orphan")
+    portfolios = relationship("Portfolio", back_populates="account")
+
+
+class AccountMembership(Base):
+    __tablename__ = "account_memberships"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    account_id = Column(String, ForeignKey("accounts.id"), index=True, nullable=False)
+    user_id = Column(String, ForeignKey("users.id"), index=True, nullable=False)
+    role = Column(String, default="viewer", nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    account = relationship("Account", back_populates="memberships")
+    user = relationship("User", back_populates="account_memberships")
 
 
 class Portfolio(Base):
@@ -30,9 +60,11 @@ class Portfolio(Base):
     name = Column(String, nullable=False)
     base_currency = Column(String, default="USD", nullable=False)
     user_id = Column(String, ForeignKey("users.id"), index=True, nullable=False)
+    account_id = Column(String, ForeignKey("accounts.id"), index=True, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     user = relationship("User", back_populates="portfolios")
+    account = relationship("Account", back_populates="portfolios")
     stocks = relationship("StockPosition", back_populates="portfolio", cascade="all, delete-orphan")
     fcn_positions = relationship("FCNPosition", back_populates="portfolio", cascade="all, delete-orphan")
     crypto_positions = relationship("CryptoPosition", back_populates="portfolio", cascade="all, delete-orphan")
