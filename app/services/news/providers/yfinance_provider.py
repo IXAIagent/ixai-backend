@@ -20,6 +20,10 @@ logger = logging.getLogger(__name__)
 class YFinanceNewsProvider:
     source = "yfinance"
     _cache = TTLCache(maxsize=200, ttl=settings.NEWS_CACHE_TTL)
+    _cooldown = TTLCache(
+        maxsize=500,
+        ttl=max(60, int(settings.INTELLIGENCE_NEWS_MIN_INTERVAL_SECONDS or 3600)),
+    )
 
     def get_news(self, symbol: str, limit: int = 5) -> list[NewsArticle]:
         normalized_symbol = str(symbol or "").strip().upper()
@@ -32,6 +36,9 @@ class YFinanceNewsProvider:
 
         if cache_key in self._cache:
             return list(self._cache[cache_key])
+        if normalized_symbol in self._cooldown:
+            logger.warning("news provider cooldown active for %s", normalized_symbol)
+            return []
 
         try:
             raw_news = yf.Ticker(normalized_symbol).news or []
@@ -42,7 +49,19 @@ class YFinanceNewsProvider:
             articles = [article for article in articles if article is not None]
             self._cache[cache_key] = articles
             return articles
-        except Exception:
+        except Exception as exc:
+            if self._is_rate_limit_error(exc):
+                self._cooldown[normalized_symbol] = True
+                logger.warning(
+                    "news provider rate limited; cooldown enabled",
+                    extra={
+                        "provider": "yfinance",
+                        "operation": "news_lookup",
+                        "symbol": normalized_symbol,
+                        "error": str(exc)[:200],
+                    },
+                )
+                return []
             logger.exception(
                 "news provider failure",
                 extra={
@@ -52,6 +71,11 @@ class YFinanceNewsProvider:
                 },
             )
             return []
+
+    def _is_rate_limit_error(self, exc: Exception) -> bool:
+        name = exc.__class__.__name__.lower()
+        message = str(exc).lower()
+        return "ratelimit" in name or "too many requests" in message or "429" in message
 
     def _to_article(self, symbol: str, item: Any) -> NewsArticle | None:
         if not isinstance(item, dict):

@@ -51,7 +51,10 @@ def run_intelligence_scheduler_once(db: Session | None = None, source: str = SOU
             result["skipped"] = 0
             return result
 
-        service = PortfolioIntelligenceService(session)
+        service = PortfolioIntelligenceService(
+            session,
+            skip_news=bool(settings.INTELLIGENCE_SCHEDULER_SKIP_NEWS),
+        )
         for portfolio in portfolios:
             result["processed"] += 1
             run_log = IntelligenceRunLog(

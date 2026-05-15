@@ -190,3 +190,35 @@ class PortfolioSummaryV2AResponse(BaseModel):
     intelligence_confidence: float = 0
     generated_at: datetime
     is_stale: bool = False
+
+
+class TimelineWindowSummary(BaseModel):
+    window: str
+    regime_evolution: str = "INSUFFICIENT_HISTORY"
+    exposure_evolution: str = "INSUFFICIENT_HISTORY"
+    risk_score_trend: str = "INSUFFICIENT_HISTORY"
+    concentration_trend: str = "INSUFFICIENT_HISTORY"
+    volatility_trend: str = "INSUFFICIENT_HISTORY"
+    dominant_driver_history: list[str] = Field(default_factory=list)
+    recurring_risks: list[str] = Field(default_factory=list)
+    improving_signals: list[str] = Field(default_factory=list)
+    deteriorating_signals: list[str] = Field(default_factory=list)
+
+
+class TimelineIntelligenceResponse(BaseModel):
+    portfolio_id: str = ""
+    windows: list[TimelineWindowSummary] = Field(default_factory=list)
+    regime_evolution: str = "INSUFFICIENT_HISTORY"
+    exposure_evolution: str = "INSUFFICIENT_HISTORY"
+    risk_score_trend: str = "INSUFFICIENT_HISTORY"
+    concentration_trend: str = "INSUFFICIENT_HISTORY"
+    volatility_trend: str = "INSUFFICIENT_HISTORY"
+    dominant_driver_history: list[str] = Field(default_factory=list)
+    recurring_risks: list[str] = Field(default_factory=list)
+    improving_signals: list[str] = Field(default_factory=list)
+    deteriorating_signals: list[str] = Field(default_factory=list)
+    timeline_summary: str = "歷史資料仍在累積。"
+    message: str = "歷史資料仍在累積。"
+    confidence: float = 0
+    generated_at: datetime
+    is_stale: bool = False

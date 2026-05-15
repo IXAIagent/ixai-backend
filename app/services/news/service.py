@@ -31,6 +31,7 @@ class NewsService:
         impact_engine: PortfolioImpactEngine | None = None,
         priority_engine: PortfolioPriorityEngine | None = None,
         summary_provider: SummaryProvider | None = None,
+        skip_provider: bool = False,
     ) -> None:
         self.db = db
         self.provider = provider or YFinanceNewsProvider()
@@ -38,9 +39,20 @@ class NewsService:
         self.impact_engine = impact_engine or PortfolioImpactEngine()
         self.priority_engine = priority_engine or PortfolioPriorityEngine()
         self.summary_provider = summary_provider or self._build_summary_provider()
+        self.skip_provider = bool(skip_provider)
 
     def get_portfolio_news(self, portfolio: Portfolio) -> PortfolioNewsResponse:
         context = self._build_portfolio_context(portfolio)
+        if self.skip_provider:
+            return PortfolioNewsResponse(
+                portfolio_id=str(portfolio.id),
+                portfolio_name=str(portfolio.name),
+                articles=[],
+                summary="News lookup skipped for scheduled intelligence generation.",
+                fetched_at=utc_now_iso(),
+                is_stale=True,
+            )
+
         symbols = list(context["symbols"])
         articles: list[NewsArticle] = []
         seen_links: set[str] = set()

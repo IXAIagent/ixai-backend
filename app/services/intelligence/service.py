@@ -24,19 +24,26 @@ from app.services.intelligence.predictive_engine import PredictiveDriftEngine
 from app.services.intelligence.reasoning_engine import IntelligenceReasoningEngine
 from app.services.intelligence.regime_engine import PortfolioRegimeEngine
 from app.services.intelligence.scenario_engine import ScenarioEngine
-from app.services.intelligence.schemas import PortfolioIntelligenceResponse, PortfolioSummaryV2AResponse, ReasoningSystemResponse
+from app.services.intelligence.schemas import (
+    PortfolioIntelligenceResponse,
+    PortfolioSummaryV2AResponse,
+    ReasoningSystemResponse,
+    TimelineIntelligenceResponse,
+)
 from app.services.intelligence.scoring_engine import IntelligenceScoringEngine
 from app.services.intelligence.theme_engine import ThemeEvolutionEngine
 from app.services.intelligence.timeline_engine import IntelligenceTimelineEngine
+from app.services.intelligence.timeline_intelligence_engine import TimelineIntelligenceEngine
 from app.services.intelligence.workspace_engine import WorkspaceDecisionEngine
 from app.services.news.priority_engine import PortfolioPriorityEngine
 from app.services.news.service import NewsService
 
 
 class PortfolioIntelligenceService:
-    def __init__(self, db: Session) -> None:
+    def __init__(self, db: Session, skip_news: bool = False) -> None:
         self.db = db
-        self.news_service = NewsService(db)
+        self.skip_news = bool(skip_news)
+        self.news_service = NewsService(db, skip_provider=self.skip_news)
         self.priority_engine = PortfolioPriorityEngine()
         self.scoring_engine = IntelligenceScoringEngine()
         self.enrichment_engine = IntelligenceEnrichmentEngine()
@@ -57,6 +64,7 @@ class PortfolioIntelligenceService:
         self.reasoning_engine = IntelligenceReasoningEngine()
         self.predictive_engine = PredictiveDriftEngine()
         self.timeline_engine = IntelligenceTimelineEngine()
+        self.timeline_intelligence_engine = TimelineIntelligenceEngine(self.persistent_memory)
         self.dna_engine = PortfolioDNAEngine()
         self.copilot_service = IXAICopilotService()
         self.fcn_monitor = FCNMonitorService()
@@ -178,6 +186,18 @@ class PortfolioIntelligenceService:
             return PortfolioSummaryV2AResponse(
                 generated_at=datetime.now(timezone.utc),
                 is_stale=True,
+            )
+
+    def get_timeline_intelligence(self, portfolio: Portfolio) -> TimelineIntelligenceResponse:
+        try:
+            return self.timeline_intelligence_engine.analyze(str(portfolio.id))
+        except Exception:
+            return TimelineIntelligenceResponse(
+                portfolio_id=str(getattr(portfolio, "id", "") or ""),
+                generated_at=datetime.now(timezone.utc),
+                is_stale=True,
+                message="歷史資料讀取失敗，已回傳安全 fallback。",
+                timeline_summary="歷史資料讀取失敗，已回傳安全 fallback。",
             )
 
     def get_scenarios(self, portfolio: Portfolio):

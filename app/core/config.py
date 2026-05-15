@@ -66,6 +66,8 @@ class Settings(BaseSettings):
     INTELLIGENCE_SCHEDULER_ENABLED: bool = False
     INTELLIGENCE_SCHEDULER_BATCH_LIMIT: int = 100
     INTELLIGENCE_SCHEDULER_INTERVAL_MINUTES: int = 60
+    INTELLIGENCE_SCHEDULER_SKIP_NEWS: bool = True
+    INTELLIGENCE_NEWS_MIN_INTERVAL_SECONDS: int = 3600
 
     # Observability (v1C). All optional; absence disables Sentry without error.
     SENTRY_DSN: str | None = None
