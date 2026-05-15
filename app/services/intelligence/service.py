@@ -10,14 +10,20 @@ from app.services.fcn_monitor_service import FCNMonitorService
 from app.services.intelligence.brief_engine import IntelligenceBriefEngine
 from app.services.intelligence.correlation_engine import IntelligenceCorrelationEngine
 from app.services.intelligence.copilot_service import IXAICopilotService
+from app.services.intelligence.dna_engine import PortfolioDNAEngine
 from app.services.intelligence.enrichment_engine import IntelligenceEnrichmentEngine
 from app.services.intelligence.graph_engine import IntelligenceGraphEngine
+from app.services.intelligence.long_memory import LongTermMemoryEngine
 from app.services.intelligence.memory_service import IntelligenceMemoryService
 from app.services.intelligence.narrative_engine import IntelligenceNarrativeEngine
 from app.services.intelligence.persistent_memory import IntelligenceMemoryStore
+from app.services.intelligence.predictive_engine import PredictiveDriftEngine
+from app.services.intelligence.reasoning_engine import IntelligenceReasoningEngine
 from app.services.intelligence.scenario_engine import ScenarioEngine
-from app.services.intelligence.schemas import PortfolioIntelligenceResponse
+from app.services.intelligence.schemas import PortfolioIntelligenceResponse, ReasoningSystemResponse
 from app.services.intelligence.scoring_engine import IntelligenceScoringEngine
+from app.services.intelligence.theme_engine import ThemeEvolutionEngine
+from app.services.intelligence.timeline_engine import IntelligenceTimelineEngine
 from app.services.intelligence.workspace_engine import WorkspaceDecisionEngine
 from app.services.news.priority_engine import PortfolioPriorityEngine
 from app.services.news.service import NewsService
@@ -36,8 +42,14 @@ class PortfolioIntelligenceService:
         self.brief_engine = IntelligenceBriefEngine()
         self.memory_service = IntelligenceMemoryService()
         self.persistent_memory = IntelligenceMemoryStore()
+        self.long_memory_engine = LongTermMemoryEngine(self.persistent_memory)
         self.scenario_engine = ScenarioEngine()
         self.graph_engine = IntelligenceGraphEngine()
+        self.theme_engine = ThemeEvolutionEngine()
+        self.reasoning_engine = IntelligenceReasoningEngine()
+        self.predictive_engine = PredictiveDriftEngine()
+        self.timeline_engine = IntelligenceTimelineEngine()
+        self.dna_engine = PortfolioDNAEngine()
         self.copilot_service = IXAICopilotService()
         self.fcn_monitor = FCNMonitorService()
 
@@ -113,7 +125,66 @@ class PortfolioIntelligenceService:
 
     def answer_copilot_question(self, portfolio: Portfolio, question: str) -> str:
         intelligence = self.get_portfolio_intelligence(portfolio)
-        return self.copilot_service.answer_question(question, {"intelligence": intelligence})
+        reasoning = self.get_reasoning_system(portfolio)
+        return self.copilot_service.answer_question(question, {"intelligence": intelligence, "reasoning": reasoning})
+
+    def get_reasoning_system(self, portfolio: Portfolio) -> ReasoningSystemResponse:
+        try:
+            context = self._analysis_context(portfolio)
+            portfolio_id = str(portfolio.id)
+            scores = context["scores"]
+            articles = context["articles"]
+            correlations = context["correlations"]
+            fcn_analysis = context["fcn_analysis"]
+            alerts = context["alerts"]
+            priority_response = context["priority_response"]
+            workspace = self.workspace_engine.decide(
+                scores,
+                critical_count=int(priority_response.critical_count or 0),
+                high_count=int(priority_response.high_count or 0),
+            )
+            enrichment = self.enrichment_engine.enrich_articles(articles)
+            long_memory = self.long_memory_engine.summarize(portfolio_id)
+            themes = self.theme_engine.evolve(enrichment, articles, correlations, long_memory)
+            scenarios = self.scenario_engine.build_scenarios(
+                context["portfolio_payload"],
+                scores,
+                correlations,
+                fcn_analysis,
+            )
+            what_changed_today = self.memory_service.compare_and_store(portfolio_id, workspace, scores)
+            reasoning = self.reasoning_engine.reason(
+                scores,
+                scenarios,
+                correlations,
+                themes,
+                workspace,
+                long_memory,
+                alerts,
+                fcn_analysis,
+                context["portfolio_payload"],
+            )
+            predictive = self.predictive_engine.predict(scores, workspace, long_memory, themes)
+            timeline = self.timeline_engine.summarize(
+                workspace,
+                long_memory,
+                themes,
+                alerts,
+                what_changed_today,
+            )
+            dna = self.dna_engine.analyze(context["portfolio_payload"], scores)
+            return ReasoningSystemResponse(
+                long_memory=long_memory,
+                themes=themes,
+                reasoning=reasoning,
+                predictive=predictive,
+                timeline=timeline,
+                dna=dna,
+                generated_at=datetime.now(timezone.utc),
+                is_stale=False,
+            )
+        except Exception:
+            return ReasoningSystemResponse(generated_at=datetime.now(timezone.utc), is_stale=True)
 
     def _analysis_context(self, portfolio: Portfolio) -> dict[str, Any]:
         portfolio_payload = self._portfolio_payload(portfolio)

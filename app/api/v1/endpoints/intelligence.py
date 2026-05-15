@@ -9,6 +9,7 @@ from app.services.intelligence.schemas import (
     CopilotExplainResponse,
     IntelligenceGraphResponse,
     PortfolioIntelligenceResponse,
+    ReasoningSystemResponse,
     ScenarioResponse,
 )
 from app.services.intelligence.service import PortfolioIntelligenceService
@@ -57,6 +58,18 @@ def get_portfolio_intelligence(
         raise HTTPException(status_code=404, detail="Current user has no portfolio")
 
     return PortfolioIntelligenceService(db).get_portfolio_intelligence(portfolio)
+
+
+@router.get("/reasoning", response_model=ReasoningSystemResponse)
+def get_intelligence_reasoning(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    portfolio = db.query(Portfolio).filter(Portfolio.user_id == current_user.id).first()
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="Current user has no portfolio")
+
+    return PortfolioIntelligenceService(db).get_reasoning_system(portfolio)
 
 
 @router.get("/scenarios", response_model=ScenarioResponse)

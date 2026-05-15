@@ -103,3 +103,70 @@ class CopilotExplainResponse(BaseModel):
     supported_topics: list[str] = Field(default_factory=list)
     generated_at: datetime
     is_stale: bool = False
+
+
+class LongMemorySummary(BaseModel):
+    dominant_workspace_mode: str = "BALANCED"
+    recurring_risk_themes: list[str] = Field(default_factory=list)
+    historical_risk_trend: str = "STABLE"
+    fcn_risk_trend: str = "STABLE"
+    crypto_vol_trend: str = "STABLE"
+    ai_momentum_trend: str = "STABLE"
+    concentration_trend: str = "STABLE"
+
+
+class ThemeEvolution(BaseModel):
+    dominant_themes: list[str] = Field(default_factory=list)
+    emerging_themes: list[str] = Field(default_factory=list)
+    weakening_themes: list[str] = Field(default_factory=list)
+    theme_confidence: float = 0
+    narrative_summary: str = ""
+
+
+class ReasoningResult(BaseModel):
+    top_risks: list[str] = Field(default_factory=list)
+    top_strengths: list[str] = Field(default_factory=list)
+    key_dependencies: list[str] = Field(default_factory=list)
+    concentration_analysis: str = ""
+    volatility_analysis: str = ""
+    reasoning_summary: str = ""
+    why_workspace_mode: str = ""
+    what_changed_this_week: str = ""
+
+
+class PredictiveDrift(BaseModel):
+    likely_workspace_shift: str = "BALANCED"
+    confidence: float = 0
+    prediction_reason: str = ""
+    predictive_alerts: list[str] = Field(default_factory=list)
+
+
+class TimelineSummary(BaseModel):
+    what_changed_today: str = ""
+    what_changed_this_week: str = ""
+    new_risks: list[str] = Field(default_factory=list)
+    improving_signals: list[str] = Field(default_factory=list)
+    persistent_themes: list[str] = Field(default_factory=list)
+    timeline_events: list[str] = Field(default_factory=list)
+
+
+class PortfolioDNA(BaseModel):
+    dominant_style: str = "Balanced Multi-Asset"
+    risk_profile: str = "Balanced"
+    volatility_profile: str = "Moderate"
+    concentration_profile: str = "Diversified"
+    AI_exposure_level: str = "LOW"
+    FCN_dependency_level: str = "LOW"
+    crypto_dependency_level: str = "LOW"
+    macro_sensitivity: str = "MODERATE"
+
+
+class ReasoningSystemResponse(BaseModel):
+    long_memory: LongMemorySummary = Field(default_factory=LongMemorySummary)
+    themes: ThemeEvolution = Field(default_factory=ThemeEvolution)
+    reasoning: ReasoningResult = Field(default_factory=ReasoningResult)
+    predictive: PredictiveDrift = Field(default_factory=PredictiveDrift)
+    timeline: TimelineSummary = Field(default_factory=TimelineSummary)
+    dna: PortfolioDNA = Field(default_factory=PortfolioDNA)
+    generated_at: datetime
+    is_stale: bool = False
