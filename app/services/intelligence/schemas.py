@@ -53,3 +53,53 @@ class PortfolioIntelligenceResponse(BaseModel):
     brief: IntelligenceBrief = Field(default_factory=IntelligenceBrief)
     generated_at: datetime
     is_stale: bool = False
+
+
+class ScenarioResult(BaseModel):
+    scenario_name: str
+    impact_level: str = "LOW"
+    affected_assets: list[str] = Field(default_factory=list)
+    portfolio_sensitivity: str = ""
+    fcn_risk_change: str = ""
+    narrative: str = ""
+
+
+class ScenarioResponse(BaseModel):
+    scenarios: list[ScenarioResult] = Field(default_factory=list)
+    generated_at: datetime
+    is_stale: bool = False
+
+
+class IntelligenceGraphNode(BaseModel):
+    id: str
+    label: str
+    node_type: str
+    weight: float = 1
+
+
+class IntelligenceGraphEdge(BaseModel):
+    source: str
+    target: str
+    edge_type: str
+    explanation: str = ""
+
+
+class IntelligenceGraphResponse(BaseModel):
+    nodes: list[IntelligenceGraphNode] = Field(default_factory=list)
+    edges: list[IntelligenceGraphEdge] = Field(default_factory=list)
+    strongest_themes: list[str] = Field(default_factory=list)
+    strongest_connections: list[str] = Field(default_factory=list)
+    top_correlated_risks: list[str] = Field(default_factory=list)
+    generated_at: datetime
+    is_stale: bool = False
+
+
+class CopilotExplainRequest(BaseModel):
+    question: str
+
+
+class CopilotExplainResponse(BaseModel):
+    answer: str
+    supported_topics: list[str] = Field(default_factory=list)
+    generated_at: datetime
+    is_stale: bool = False

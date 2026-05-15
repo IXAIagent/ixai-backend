@@ -7,6 +7,57 @@ from app.services.intelligence.schemas import (
     WorkspaceDecision,
 )
 from app.services.news.schemas import NewsArticle
+from app.core.config import settings
+from app.services.intelligence.compliance import compliance_filter
+
+
+class ClaudeNarrativeProvider:
+    def generate(
+        self,
+        scores: IntelligenceScore,
+        workspace: WorkspaceDecision,
+        articles: list[NewsArticle],
+        correlations: list[IntelligenceCorrelation],
+        what_changed_today: str,
+    ) -> IntelligenceNarrative | None:
+        if not settings.ANTHROPIC_API_KEY or not settings.INTELLIGENCE_AI_NARRATIVE:
+            return None
+        try:
+            from anthropic import Anthropic
+
+            client = Anthropic(api_key=settings.ANTHROPIC_API_KEY, timeout=8.0)
+            article_titles = "; ".join(str(article.title or "")[:80] for article in articles[:5])
+            correlation_text = "; ".join(item.explanation[:80] for item in correlations[:4])
+            prompt = (
+                "你是 IXAI 投資組合風險助理。請用繁體中文輸出 JSON，欄位為 "
+                "market_narrative, portfolio_narrative, risk_narrative, fcn_narrative, what_changed_today。"
+                "每欄 1-2 句，禁止提供買進、賣出、加減碼、目標價、部位數量或停損指令。"
+                f"Workspace: {workspace.workspace_mode}. Scores: {scores.model_dump()}. "
+                f"News: {article_titles}. Correlations: {correlation_text}. Change: {what_changed_today}"
+            )
+            response = client.messages.create(
+                model=settings.CLAUDE_MODEL,
+                max_tokens=500,
+                temperature=0.2,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            text = "".join(
+                block.text
+                for block in response.content
+                if getattr(block, "type", "") == "text" and getattr(block, "text", None)
+            )
+            import json
+
+            data = json.loads(text)
+            return IntelligenceNarrative(
+                market_narrative=compliance_filter.sanitize_text(data.get("market_narrative"), max_length=160),
+                portfolio_narrative=compliance_filter.sanitize_text(data.get("portfolio_narrative"), max_length=160),
+                risk_narrative=compliance_filter.sanitize_text(data.get("risk_narrative"), max_length=160),
+                fcn_narrative=compliance_filter.sanitize_text(data.get("fcn_narrative"), max_length=160),
+                what_changed_today=compliance_filter.sanitize_text(data.get("what_changed_today"), max_length=160),
+            )
+        except Exception:
+            return None
 
 
 class IntelligenceNarrativeEngine:
@@ -19,12 +70,23 @@ class IntelligenceNarrativeEngine:
         what_changed_today: str = "",
     ) -> IntelligenceNarrative:
         try:
+            ai_narrative = ClaudeNarrativeProvider().generate(
+                scores,
+                workspace,
+                articles,
+                correlations,
+                what_changed_today,
+            )
+            if ai_narrative:
+                return ai_narrative
             return IntelligenceNarrative(
-                market_narrative=self._market(workspace, scores),
-                portfolio_narrative=self._portfolio(workspace, articles, correlations),
-                risk_narrative=self._risk(scores, workspace),
-                fcn_narrative=self._fcn(scores, articles),
-                what_changed_today=what_changed_today or "目前為首次 intelligence snapshot，後續將追蹤模式與分數變化。",
+                market_narrative=compliance_filter.sanitize_text(self._market(workspace, scores)),
+                portfolio_narrative=compliance_filter.sanitize_text(self._portfolio(workspace, articles, correlations)),
+                risk_narrative=compliance_filter.sanitize_text(self._risk(scores, workspace)),
+                fcn_narrative=compliance_filter.sanitize_text(self._fcn(scores, articles)),
+                what_changed_today=compliance_filter.sanitize_text(
+                    what_changed_today or "目前為首次 intelligence snapshot，後續將追蹤模式與分數變化。"
+                ),
             )
         except Exception:
             return IntelligenceNarrative(

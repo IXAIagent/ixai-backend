@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     NEWS_SUMMARY_PROVIDER: str = "rule_based"
     ANTHROPIC_API_KEY: str | None = None
     CLAUDE_MODEL: str = "claude-sonnet-4-5"
+    INTELLIGENCE_AI_NARRATIVE: bool = False
 
     @property
     def cors_origins(self) -> list[str]:

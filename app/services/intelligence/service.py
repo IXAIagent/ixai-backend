@@ -9,8 +9,13 @@ from app.models.models import CashPosition, CryptoPosition, FCNPosition, Portfol
 from app.services.fcn_monitor_service import FCNMonitorService
 from app.services.intelligence.brief_engine import IntelligenceBriefEngine
 from app.services.intelligence.correlation_engine import IntelligenceCorrelationEngine
+from app.services.intelligence.copilot_service import IXAICopilotService
+from app.services.intelligence.enrichment_engine import IntelligenceEnrichmentEngine
+from app.services.intelligence.graph_engine import IntelligenceGraphEngine
 from app.services.intelligence.memory_service import IntelligenceMemoryService
 from app.services.intelligence.narrative_engine import IntelligenceNarrativeEngine
+from app.services.intelligence.persistent_memory import IntelligenceMemoryStore
+from app.services.intelligence.scenario_engine import ScenarioEngine
 from app.services.intelligence.schemas import PortfolioIntelligenceResponse
 from app.services.intelligence.scoring_engine import IntelligenceScoringEngine
 from app.services.intelligence.workspace_engine import WorkspaceDecisionEngine
@@ -24,11 +29,16 @@ class PortfolioIntelligenceService:
         self.news_service = NewsService(db)
         self.priority_engine = PortfolioPriorityEngine()
         self.scoring_engine = IntelligenceScoringEngine()
+        self.enrichment_engine = IntelligenceEnrichmentEngine()
         self.correlation_engine = IntelligenceCorrelationEngine()
         self.workspace_engine = WorkspaceDecisionEngine()
         self.narrative_engine = IntelligenceNarrativeEngine()
         self.brief_engine = IntelligenceBriefEngine()
         self.memory_service = IntelligenceMemoryService()
+        self.persistent_memory = IntelligenceMemoryStore()
+        self.scenario_engine = ScenarioEngine()
+        self.graph_engine = IntelligenceGraphEngine()
+        self.copilot_service = IXAICopilotService()
         self.fcn_monitor = FCNMonitorService()
 
     def get_portfolio_intelligence(self, portfolio: Portfolio) -> PortfolioIntelligenceResponse:
@@ -39,6 +49,7 @@ class PortfolioIntelligenceService:
             priority_response = self.priority_engine.build_priority_response(articles)
             fcn_analysis = self._fcn_analysis(portfolio)
             alerts = list(priority_response.top_alerts or [])
+            _ = self.enrichment_engine.enrich_articles(articles)
 
             scores = self.scoring_engine.score(portfolio_payload, articles, fcn_analysis, alerts)
             correlations = self.correlation_engine.correlate(portfolio_payload, articles, fcn_analysis)
@@ -48,6 +59,9 @@ class PortfolioIntelligenceService:
                 high_count=int(priority_response.high_count or 0),
             )
             what_changed = self.memory_service.compare_and_store(str(portfolio.id), workspace, scores)
+            historical_drift = self.persistent_memory.compare_historical_drift(str(portfolio.id), scores)
+            if historical_drift:
+                what_changed = f"{what_changed} {historical_drift}".strip()
             narrative = self.narrative_engine.narrate(
                 scores,
                 workspace,
@@ -56,6 +70,13 @@ class PortfolioIntelligenceService:
                 what_changed_today=what_changed,
             )
             brief = self.brief_engine.build(scores, workspace, articles)
+            self.persistent_memory.append_snapshot(
+                str(portfolio.id),
+                scores,
+                workspace,
+                narrative,
+                alerts,
+            )
 
             return PortfolioIntelligenceResponse(
                 scores=scores,
@@ -71,6 +92,48 @@ class PortfolioIntelligenceService:
                 generated_at=datetime.now(timezone.utc),
                 is_stale=True,
             )
+
+    def get_scenarios(self, portfolio: Portfolio):
+        context = self._analysis_context(portfolio)
+        return self.scenario_engine.build_scenarios(
+            context["portfolio_payload"],
+            context["scores"],
+            context["correlations"],
+            context["fcn_analysis"],
+        )
+
+    def get_graph(self, portfolio: Portfolio):
+        context = self._analysis_context(portfolio)
+        return self.graph_engine.build_graph(
+            context["portfolio_payload"],
+            context["articles"],
+            context["correlations"],
+            context["fcn_analysis"],
+        )
+
+    def answer_copilot_question(self, portfolio: Portfolio, question: str) -> str:
+        intelligence = self.get_portfolio_intelligence(portfolio)
+        return self.copilot_service.answer_question(question, {"intelligence": intelligence})
+
+    def _analysis_context(self, portfolio: Portfolio) -> dict[str, Any]:
+        portfolio_payload = self._portfolio_payload(portfolio)
+        news_response = self.news_service.get_portfolio_news(portfolio)
+        articles = list(news_response.articles or [])
+        priority_response = self.priority_engine.build_priority_response(articles)
+        fcn_analysis = self._fcn_analysis(portfolio)
+        alerts = list(priority_response.top_alerts or [])
+        self.enrichment_engine.enrich_articles(articles)
+        scores = self.scoring_engine.score(portfolio_payload, articles, fcn_analysis, alerts)
+        correlations = self.correlation_engine.correlate(portfolio_payload, articles, fcn_analysis)
+        return {
+            "portfolio_payload": portfolio_payload,
+            "articles": articles,
+            "priority_response": priority_response,
+            "fcn_analysis": fcn_analysis,
+            "alerts": alerts,
+            "scores": scores,
+            "correlations": correlations,
+        }
 
     def _portfolio_payload(self, portfolio: Portfolio) -> dict[str, Any]:
         stock_positions = [self._stock_payload(item) for item in self._stocks(portfolio)]
