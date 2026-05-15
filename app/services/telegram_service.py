@@ -1,6 +1,9 @@
+import logging
 import os
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 
 def send_telegram_message(text: str):
@@ -34,9 +37,9 @@ class TelegramService:
 
         try:
             resp = requests.post(url, json=payload, timeout=8)
-            print("Telegram response:", resp.status_code, resp.text)
-        except Exception as e:
-            print("Telegram 發送失敗:", e)
+            logger.info("Telegram response status %s", resp.status_code)
+        except Exception:
+            logger.exception("Telegram send failed")
 
     def send_risk_alert(self, title: str, alert_type: str, severity: str):
         severity = (severity or "").lower()

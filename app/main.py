@@ -1,6 +1,9 @@
+import logging
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
 try:
     from app.api.v1.api import api_router
@@ -9,6 +12,13 @@ except ModuleNotFoundError:
 from app.core.config import is_development_env, settings
 from app.core.database import Base, engine
 import app.models.models  # noqa: F401
+
+logger = logging.getLogger(__name__)
+
+
+def should_run_create_all() -> bool:
+    """Return True only in development/local. Production-like envs must use Alembic."""
+    return is_development_env()
 
 
 def _build_cors_origins() -> list[str]:
@@ -63,10 +73,32 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/readyz")
+def readyz():
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+        return {"status": "ready", "database": "ok"}
+    except Exception:
+        logger.exception("readyz database ping failed")
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not_ready", "database": "error"},
+        )
+
+
 @app.on_event("startup")
 def init_db_tables():
     settings.validate_runtime_security()
-    Base.metadata.create_all(bind=engine)
+    if should_run_create_all():
+        logger.warning(
+            "Using create_all in development/local only. Production must use Alembic."
+        )
+        Base.metadata.create_all(bind=engine)
+    else:
+        logger.warning(
+            "Skipping create_all; production-like environments must use Alembic migrations."
+        )
 
 
 app.include_router(api_router, prefix="/api/v1")

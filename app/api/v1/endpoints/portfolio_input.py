@@ -1,5 +1,6 @@
 import json
 import logging
+import secrets
 from datetime import date
 from typing import Optional
 
@@ -15,6 +16,18 @@ from app.services.normalization import normalize_stock_symbol
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _demo_password() -> str:
+    """Return demo account password.
+
+    Development/local allows the fixed 'demo' password for convenience.
+    Production-like environments use an unpredictable random token so the
+    auto-created demo account cannot be logged into.
+    """
+    if is_development_env():
+        return "demo"
+    return secrets.token_urlsafe(32)
 
 
 class StockInput(BaseModel):
@@ -107,7 +120,7 @@ def get_dev_portfolio(db: Session):
 
     user = db.query(User).filter(User.email == "demo@ixai.local").first()
     if not user:
-        user = User(email="demo@ixai.local", hashed_password=get_password_hash("demo"))
+        user = User(email="demo@ixai.local", hashed_password=get_password_hash(_demo_password()))
         db.add(user)
         db.commit()
         db.refresh(user)

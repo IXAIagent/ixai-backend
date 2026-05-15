@@ -1,3 +1,4 @@
+import logging
 import time
 from collections import defaultdict, deque
 from threading import Lock
@@ -16,6 +17,7 @@ from app.core.security import (
 from app.models.models import User, Portfolio
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+logger = logging.getLogger(__name__)
 
 RATE_LIMIT_WINDOW_SECONDS = 60
 RATE_LIMITS = {
@@ -116,9 +118,9 @@ def register(
         }
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         db.rollback()
-        print("REGISTER ERROR:", str(e))
+        logger.exception("Register endpoint failed")
         raise
 
 
