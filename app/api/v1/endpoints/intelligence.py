@@ -7,6 +7,7 @@ from app.api.deps import (
 )
 from app.core.config import is_development_env
 from app.core.database import get_db
+from app.core.i18n import resolve_locale_header
 from app.models.models import Portfolio, User
 from app.scheduler.intelligence_runner import run_intelligence_scheduler_once
 from app.services.intelligence.engine_service import IntelligenceEngineService
@@ -113,11 +114,14 @@ def get_intelligence_graph(
 @router.get("/engine-summary", response_model=PortfolioEngineSummaryResponse)
 def get_engine_summary(
     portfolio: Portfolio = Depends(resolve_portfolio_for_user),
+    locale: str = Depends(resolve_locale_header),
     db: Session = Depends(get_db),
 ):
     """v4A: unified portfolio intelligence engine output."""
     try:
-        return IntelligenceEngineService(db).portfolio_engine_summary(portfolio)
+        return IntelligenceEngineService(db).portfolio_engine_summary(
+            portfolio, locale=locale
+        )
     except Exception:
         from datetime import datetime, timezone
 
@@ -125,17 +129,24 @@ def get_engine_summary(
             portfolio_id=str(portfolio.id),
             generated_at=datetime.now(timezone.utc),
             is_stale=True,
+            status="unavailable",
+            stale_reason="orchestrator_error",
+            degraded_reason="orchestrator_error",
+            locale=locale,
         )
 
 
 @router.get("/market-engine", response_model=MarketEngineSummaryResponse)
 def get_market_engine_summary(
     portfolio: Portfolio = Depends(resolve_portfolio_for_user),
+    locale: str = Depends(resolve_locale_header),
     db: Session = Depends(get_db),
 ):
     """v4B: market intelligence engine output, scoped to the user's portfolio."""
     try:
-        return IntelligenceEngineService(db).market_engine_summary(portfolio)
+        return IntelligenceEngineService(db).market_engine_summary(
+            portfolio, locale=locale
+        )
     except Exception:
         from datetime import datetime, timezone
 
@@ -143,6 +154,10 @@ def get_market_engine_summary(
             portfolio_id=str(portfolio.id),
             generated_at=datetime.now(timezone.utc),
             is_stale=True,
+            status="unavailable",
+            stale_reason="orchestrator_error",
+            degraded_reason="orchestrator_error",
+            locale=locale,
         )
 
 

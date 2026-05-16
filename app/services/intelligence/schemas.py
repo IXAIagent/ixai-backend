@@ -314,6 +314,13 @@ class PortfolioEngineSummaryResponse(BaseModel):
     unified_score: UnifiedIntelligenceScore = Field(default_factory=UnifiedIntelligenceScore)
     generated_at: datetime
     is_stale: bool = False
+    # v4E additions; all additive + default-safe so clients ignoring them
+    # see unchanged contract.
+    status: str = "healthy"  # healthy / partial / degraded / unavailable
+    stale_reason: str = ""
+    degraded_reason: str = ""
+    locale: str = "en"
+    failed_engines: list[str] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -369,3 +376,9 @@ class MarketEngineSummaryResponse(BaseModel):
     )
     generated_at: datetime
     is_stale: bool = False
+    # v4E additions
+    status: str = "healthy"
+    stale_reason: str = ""
+    degraded_reason: str = ""
+    locale: str = "en"
+    failed_engines: list[str] = Field(default_factory=list)
