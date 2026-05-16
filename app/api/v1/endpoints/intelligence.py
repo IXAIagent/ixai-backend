@@ -1,7 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import (
+    get_current_user,
+    resolve_portfolio_for_user,
+)
 from app.core.config import is_development_env
 from app.core.database import get_db
 from app.models.models import Portfolio, User
@@ -27,25 +30,17 @@ router = APIRouter(prefix="/intelligence", tags=["intelligence"])
 
 @router.get("/news/portfolio", response_model=PortfolioNewsResponse)
 def get_portfolio_news(
+    portfolio: Portfolio = Depends(resolve_portfolio_for_user),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
-    portfolio = db.query(Portfolio).filter(Portfolio.user_id == current_user.id).first()
-    if not portfolio:
-        raise HTTPException(status_code=404, detail="Current user has no portfolio")
-
     return NewsService(db).get_portfolio_news(portfolio)
 
 
 @router.get("/priority", response_model=PortfolioPriorityResponse)
 def get_portfolio_priority(
+    portfolio: Portfolio = Depends(resolve_portfolio_for_user),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
-    portfolio = db.query(Portfolio).filter(Portfolio.user_id == current_user.id).first()
-    if not portfolio:
-        return PortfolioPriorityEngine().build_priority_response([])
-
     try:
         return NewsService(db).get_portfolio_priority(portfolio)
     except Exception:
@@ -54,37 +49,25 @@ def get_portfolio_priority(
 
 @router.get("/portfolio", response_model=PortfolioIntelligenceResponse)
 def get_portfolio_intelligence(
+    portfolio: Portfolio = Depends(resolve_portfolio_for_user),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
-    portfolio = db.query(Portfolio).filter(Portfolio.user_id == current_user.id).first()
-    if not portfolio:
-        raise HTTPException(status_code=404, detail="Current user has no portfolio")
-
     return PortfolioIntelligenceService(db).get_portfolio_intelligence(portfolio)
 
 
 @router.get("/portfolio-summary", response_model=PortfolioSummaryV2AResponse)
 def get_portfolio_summary_v2a(
+    portfolio: Portfolio = Depends(resolve_portfolio_for_user),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
-    portfolio = db.query(Portfolio).filter(Portfolio.user_id == current_user.id).first()
-    if not portfolio:
-        raise HTTPException(status_code=404, detail="Current user has no portfolio")
-
     return PortfolioIntelligenceService(db).get_portfolio_summary_v2a(portfolio)
 
 
 @router.get("/timeline", response_model=TimelineIntelligenceResponse)
 def get_timeline_intelligence(
+    portfolio: Portfolio = Depends(resolve_portfolio_for_user),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
-    portfolio = db.query(Portfolio).filter(Portfolio.user_id == current_user.id).first()
-    if not portfolio:
-        raise HTTPException(status_code=404, detail="Current user has no portfolio")
-
     return PortfolioIntelligenceService(db).get_timeline_intelligence(portfolio)
 
 
@@ -98,25 +81,17 @@ def run_intelligence_scheduler_admin_once(db: Session = Depends(get_db)):
 
 @router.get("/reasoning", response_model=ReasoningSystemResponse)
 def get_intelligence_reasoning(
+    portfolio: Portfolio = Depends(resolve_portfolio_for_user),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
-    portfolio = db.query(Portfolio).filter(Portfolio.user_id == current_user.id).first()
-    if not portfolio:
-        raise HTTPException(status_code=404, detail="Current user has no portfolio")
-
     return PortfolioIntelligenceService(db).get_reasoning_system(portfolio)
 
 
 @router.get("/scenarios", response_model=ScenarioResponse)
 def get_intelligence_scenarios(
+    portfolio: Portfolio = Depends(resolve_portfolio_for_user),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
-    portfolio = db.query(Portfolio).filter(Portfolio.user_id == current_user.id).first()
-    if not portfolio:
-        raise HTTPException(status_code=404, detail="Current user has no portfolio")
-
     try:
         scenarios = PortfolioIntelligenceService(db).get_scenarios(portfolio)
         return ScenarioResponse(scenarios=scenarios, generated_at=utc_now_iso(), is_stale=False)
@@ -126,27 +101,23 @@ def get_intelligence_scenarios(
 
 @router.get("/graph", response_model=IntelligenceGraphResponse)
 def get_intelligence_graph(
+    portfolio: Portfolio = Depends(resolve_portfolio_for_user),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
-    portfolio = db.query(Portfolio).filter(Portfolio.user_id == current_user.id).first()
-    if not portfolio:
-        raise HTTPException(status_code=404, detail="Current user has no portfolio")
-
     return PortfolioIntelligenceService(db).get_graph(portfolio)
 
 
 @router.post("/copilot/explain", response_model=CopilotExplainResponse)
 def explain_with_copilot(
     payload: CopilotExplainRequest,
+    portfolio: Portfolio = Depends(resolve_portfolio_for_user),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
-    portfolio = db.query(Portfolio).filter(Portfolio.user_id == current_user.id).first()
-    if not portfolio:
-        raise HTTPException(status_code=404, detail="Current user has no portfolio")
-
-    answer = PortfolioIntelligenceService(db).answer_copilot_question(portfolio, payload.question)
+    answer = PortfolioIntelligenceService(db).answer_copilot_question(
+        portfolio,
+        payload.question or "",
+        query_type=payload.query_type,
+    )
     return CopilotExplainResponse(
         answer=answer,
         supported_topics=[
@@ -155,6 +126,12 @@ def explain_with_copilot(
             "FCN sensitivity",
             "AI momentum",
             "crypto volatility",
+            "biggest_risk",
+            "why_today_focus",
+            "fcn_risk",
+            "portfolio_drift",
+            "market_impact",
+            "data_freshness",
         ],
         generated_at=utc_now_iso(),
         is_stale=False,

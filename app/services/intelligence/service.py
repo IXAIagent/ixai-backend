@@ -218,10 +218,33 @@ class PortfolioIntelligenceService:
             context["fcn_analysis"],
         )
 
-    def answer_copilot_question(self, portfolio: Portfolio, question: str) -> str:
+    def answer_copilot_question(
+        self,
+        portfolio: Portfolio,
+        question: str,
+        query_type: str | None = None,
+    ) -> str:
         intelligence = self.get_portfolio_intelligence(portfolio)
         reasoning = self.get_reasoning_system(portfolio)
-        return self.copilot_service.answer_question(question, {"intelligence": intelligence, "reasoning": reasoning})
+        portfolio_summary = None
+        timeline = None
+        try:
+            portfolio_summary = self.get_portfolio_summary_v2a(portfolio)
+        except Exception:
+            portfolio_summary = None
+        try:
+            timeline = self.get_timeline_intelligence(portfolio)
+        except Exception:
+            timeline = None
+        context = {
+            "intelligence": intelligence,
+            "reasoning": reasoning,
+            "portfolio_summary": portfolio_summary,
+            "timeline": timeline,
+        }
+        if query_type:
+            return self.copilot_service.answer_by_query_type(query_type, context)
+        return self.copilot_service.answer_question(question, context)
 
     def get_reasoning_system(self, portfolio: Portfolio) -> ReasoningSystemResponse:
         try:

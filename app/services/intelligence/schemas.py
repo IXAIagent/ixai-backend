@@ -95,7 +95,10 @@ class IntelligenceGraphResponse(BaseModel):
 
 
 class CopilotExplainRequest(BaseModel):
-    question: str
+    # v3F: backward-compatible. `question` stays optional; when `query_type`
+    # is provided it routes to a structured handler.
+    question: str = ""
+    query_type: str | None = None
 
 
 class CopilotExplainResponse(BaseModel):

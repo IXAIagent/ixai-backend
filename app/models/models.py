@@ -257,3 +257,27 @@ class IntelligenceRunLog(Base):
     error = Column(Text, nullable=True)
     source = Column(String, default="scheduler", nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, index=True, nullable=False)
+
+
+class UserPreference(Base):
+    """v3D: per-user preferences synced with frontend localStorage."""
+
+    __tablename__ = "user_preferences"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.id"), unique=True, index=True, nullable=False)
+    locale = Column(String, default="zh-TW", nullable=False)
+    default_landing_page = Column(String, default="dashboard", nullable=False)
+    compact_mode = Column(Boolean, default=True, nullable=False)
+    terminal_mode = Column(Boolean, default=True, nullable=False)
+    show_advanced_intelligence = Column(Boolean, default=False, nullable=False)
+    alert_mode = Column(String, default="criticalOnly", nullable=False)
+    notification_telegram = Column(Boolean, default=False, nullable=False)
+    notification_email = Column(Boolean, default=False, nullable=False)
+    risk_interpretation_mode = Column(String, default="balanced", nullable=False)
+    active_account_id = Column(String, nullable=True)
+    active_portfolio_id = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )

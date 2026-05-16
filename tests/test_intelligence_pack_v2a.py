@@ -127,7 +127,9 @@ def test_portfolio_summary_endpoint_contract(monkeypatch, db_session):
         )
 
     monkeypatch.setattr(intelligence.PortfolioIntelligenceService, "get_portfolio_summary_v2a", _fake_summary)
-    response = intelligence.get_portfolio_summary_v2a(db=db_session, current_user=user)
+    # v3C: endpoint now resolves the portfolio via resolve_portfolio_for_user dependency,
+    # so we pass `portfolio` directly instead of `current_user`.
+    response = intelligence.get_portfolio_summary_v2a(portfolio=portfolio, db=db_session)
     assert response.regime == "AI_MOMENTUM"
     assert response.concentration_score == 50
     assert response.explainability is not None

@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, get_owned_portfolio
+from app.api.deps import get_current_user, get_owned_portfolio, resolve_portfolio_for_user
 from app.core.config import is_development_env
 from app.core.database import get_db
 from app.models.models import CryptoPosition, FCNPosition, Portfolio, StockPosition, User
@@ -742,6 +742,26 @@ def get_alerts(
 ):
     summary = get_summary(portfolio=portfolio, db=db)
     return summary.get("latest_alerts", [])
+
+
+# v3C: portfolio-scoped variants that accept ?portfolio_id= query param.
+# Permission check delegates to resolve_portfolio_for_user (ownership or membership).
+# Legacy path-param routes above are preserved for backward compatibility.
+
+@router.get("/summary")
+def get_summary_scoped(
+    portfolio: Portfolio = Depends(resolve_portfolio_for_user),
+    db: Session = Depends(get_db),
+):
+    return get_summary(portfolio=portfolio, db=db)
+
+
+@router.get("/alerts")
+def get_alerts_scoped(
+    portfolio: Portfolio = Depends(resolve_portfolio_for_user),
+    db: Session = Depends(get_db),
+):
+    return get_alerts(portfolio=portfolio, db=db)
 
 
 @router.post("/telegram/test")
