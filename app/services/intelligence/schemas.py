@@ -225,3 +225,147 @@ class TimelineIntelligenceResponse(BaseModel):
     confidence: float = 0
     generated_at: datetime
     is_stale: bool = False
+
+
+# ---------------------------------------------------------------------------
+# v4A: Portfolio Intelligence Engine schemas
+# ---------------------------------------------------------------------------
+class ExposureGraphNode(BaseModel):
+    label: str
+    node_type: str  # asset / theme / risk_factor
+    weight: float = 0
+
+
+class ExposureGraphEdge(BaseModel):
+    source: str
+    target: str
+    edge_type: str  # asset_in_theme / theme_in_risk / fcn_underlying
+    weight: float = 0
+
+
+class ExposureGraphSummary(BaseModel):
+    nodes: list[ExposureGraphNode] = Field(default_factory=list)
+    edges: list[ExposureGraphEdge] = Field(default_factory=list)
+    repeated_underlyings: list[str] = Field(default_factory=list)
+    dominant_themes: list[str] = Field(default_factory=list)
+    high_beta_symbols: list[str] = Field(default_factory=list)
+    fcn_linked_symbols: list[str] = Field(default_factory=list)
+
+
+class ConcentrationSummary(BaseModel):
+    single_name_pct: float = 0
+    theme_pct: float = 0
+    fcn_underlying_pct: float = 0
+    crypto_pct: float = 0
+    cash_buffer_pct: float = 0
+    concentration_score: float = 0
+    risk_level: str = "clear"  # clear / watch / elevated / critical
+    top_concentration_label: str = ""
+
+
+class PortfolioDriftSummary(BaseModel):
+    allocation_drift: str = "UNCHANGED"
+    concentration_drift: str = "UNCHANGED"
+    volatility_drift: str = "UNCHANGED"
+    fcn_pressure_drift: str = "UNCHANGED"
+    regime_drift: str = "UNCHANGED"
+    drift_summary: str = ""
+    history_window: int = 0
+
+
+class FCNSystemicRiskSummary(BaseModel):
+    worst_of_pressure_pct: float = 0  # percentage points below initial level
+    nearest_ki_pct: float | None = None
+    repeated_underlyings: list[str] = Field(default_factory=list)
+    ki_cluster_symbols: list[str] = Field(default_factory=list)
+    observation_clustering: str = "spread"  # spread / clustered / unknown
+    risk_level: str = "clear"
+
+
+class RiskPropagationChain(BaseModel):
+    chain: list[str] = Field(default_factory=list)
+    explanation: str = ""
+
+
+class RiskPropagationSummary(BaseModel):
+    chains: list[RiskPropagationChain] = Field(default_factory=list)
+    summary: str = ""
+
+
+class UnifiedIntelligenceScore(BaseModel):
+    exposure_score: float = 0
+    concentration_score: float = 0
+    fcn_stress_score: float = 0
+    volatility_score: float = 0
+    drift_score: float = 0
+    systemic_score: float = 0
+    total_intelligence_score: float = 0
+    risk_state: str = "clear"  # clear / watch / elevated / critical
+    confidence: float = 0
+
+
+class PortfolioEngineSummaryResponse(BaseModel):
+    portfolio_id: str = ""
+    exposure_graph: ExposureGraphSummary = Field(default_factory=ExposureGraphSummary)
+    concentration: ConcentrationSummary = Field(default_factory=ConcentrationSummary)
+    drift: PortfolioDriftSummary = Field(default_factory=PortfolioDriftSummary)
+    fcn_systemic_risk: FCNSystemicRiskSummary = Field(default_factory=FCNSystemicRiskSummary)
+    risk_propagation: RiskPropagationSummary = Field(default_factory=RiskPropagationSummary)
+    unified_score: UnifiedIntelligenceScore = Field(default_factory=UnifiedIntelligenceScore)
+    generated_at: datetime
+    is_stale: bool = False
+
+
+# ---------------------------------------------------------------------------
+# v4B: Market Intelligence Engine schemas
+# ---------------------------------------------------------------------------
+class MarketRegimeSummary(BaseModel):
+    regime: str = "data_limited"  # risk_on / risk_off / high_volatility / crypto_stress / ai_momentum / defensive / data_limited
+    confidence: float = 0
+    drivers: list[str] = Field(default_factory=list)
+    narrative: str = ""
+
+
+class VolatilityStateSummary(BaseModel):
+    equity_volatility_state: str = "normal"  # low / normal / elevated / high / data_limited
+    crypto_volatility_state: str = "normal"
+    fcn_sensitivity_state: str = "normal"
+    overall_state: str = "normal"
+    data_limited: bool = False
+
+
+class MacroNewsRiskTheme(BaseModel):
+    theme: str
+    weight: float = 0
+    sample_headlines: list[str] = Field(default_factory=list)
+
+
+class MacroNewsRiskSummary(BaseModel):
+    rates_pressure: float = 0
+    ai_pressure: float = 0
+    crypto_pressure: float = 0
+    geopolitics_pressure: float = 0
+    earnings_pressure: float = 0
+    macro_stress: float = 0
+    top_themes: list[MacroNewsRiskTheme] = Field(default_factory=list)
+    narrative: str = ""
+
+
+class PortfolioMarketImpactSummary(BaseModel):
+    fcn_impact: str = ""
+    crypto_impact: str = ""
+    equity_impact: str = ""
+    cash_buffer_interpretation: str = ""
+    overall_impact_level: str = "clear"  # clear / watch / elevated / critical
+
+
+class MarketEngineSummaryResponse(BaseModel):
+    portfolio_id: str = ""
+    regime: MarketRegimeSummary = Field(default_factory=MarketRegimeSummary)
+    volatility: VolatilityStateSummary = Field(default_factory=VolatilityStateSummary)
+    macro_news: MacroNewsRiskSummary = Field(default_factory=MacroNewsRiskSummary)
+    portfolio_impact: PortfolioMarketImpactSummary = Field(
+        default_factory=PortfolioMarketImpactSummary
+    )
+    generated_at: datetime
+    is_stale: bool = False

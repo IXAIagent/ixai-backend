@@ -9,10 +9,13 @@ from app.core.config import is_development_env
 from app.core.database import get_db
 from app.models.models import Portfolio, User
 from app.scheduler.intelligence_runner import run_intelligence_scheduler_once
+from app.services.intelligence.engine_service import IntelligenceEngineService
 from app.services.intelligence.schemas import (
     CopilotExplainRequest,
     CopilotExplainResponse,
     IntelligenceGraphResponse,
+    MarketEngineSummaryResponse,
+    PortfolioEngineSummaryResponse,
     PortfolioIntelligenceResponse,
     PortfolioSummaryV2AResponse,
     ReasoningSystemResponse,
@@ -105,6 +108,42 @@ def get_intelligence_graph(
     db: Session = Depends(get_db),
 ):
     return PortfolioIntelligenceService(db).get_graph(portfolio)
+
+
+@router.get("/engine-summary", response_model=PortfolioEngineSummaryResponse)
+def get_engine_summary(
+    portfolio: Portfolio = Depends(resolve_portfolio_for_user),
+    db: Session = Depends(get_db),
+):
+    """v4A: unified portfolio intelligence engine output."""
+    try:
+        return IntelligenceEngineService(db).portfolio_engine_summary(portfolio)
+    except Exception:
+        from datetime import datetime, timezone
+
+        return PortfolioEngineSummaryResponse(
+            portfolio_id=str(portfolio.id),
+            generated_at=datetime.now(timezone.utc),
+            is_stale=True,
+        )
+
+
+@router.get("/market-engine", response_model=MarketEngineSummaryResponse)
+def get_market_engine_summary(
+    portfolio: Portfolio = Depends(resolve_portfolio_for_user),
+    db: Session = Depends(get_db),
+):
+    """v4B: market intelligence engine output, scoped to the user's portfolio."""
+    try:
+        return IntelligenceEngineService(db).market_engine_summary(portfolio)
+    except Exception:
+        from datetime import datetime, timezone
+
+        return MarketEngineSummaryResponse(
+            portfolio_id=str(portfolio.id),
+            generated_at=datetime.now(timezone.utc),
+            is_stale=True,
+        )
 
 
 @router.post("/copilot/explain", response_model=CopilotExplainResponse)
