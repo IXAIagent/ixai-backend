@@ -127,6 +127,22 @@ class FCNPosition(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     portfolio = relationship("Portfolio", back_populates="fcn_positions")
+    coupon_schedules = relationship("FCNCouponSchedule", back_populates="fcn_position", cascade="all, delete-orphan")
+
+
+class FCNCouponSchedule(Base):
+    __tablename__ = "fcn_coupon_schedules"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    fcn_position_id = Column(String, ForeignKey("fcn_positions.id"), index=True, nullable=False)
+    period_index = Column(Integer, nullable=False)
+    observation_start_date = Column(Date, nullable=True)
+    observation_date = Column(Date, nullable=False)
+    payment_date = Column(Date, nullable=False)
+    status = Column(String, default="scheduled", nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    fcn_position = relationship("FCNPosition", back_populates="coupon_schedules")
 
 
 class CryptoPosition(Base):

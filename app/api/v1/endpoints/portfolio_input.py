@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 from app.core.config import is_development_env
 from app.core.database import get_db
 from app.core.security import decode_access_token, get_password_hash
-from app.models.models import CashPosition, CryptoPosition, FCNPosition, Portfolio, StockPosition, User
+from app.models.models import CashPosition, CryptoPosition, FCNCouponSchedule, FCNPosition, Portfolio, StockPosition, User
+from app.services.fcn_schedule_service import replace_fcn_schedule
 from app.services.normalization import normalize_stock_symbol
 
 router = APIRouter()
@@ -96,6 +97,7 @@ class FCNInput(BaseModel):
     strike_level: Optional[float] = None
     coupon_rate: Optional[float] = None
     risk_level: Optional[str] = None
+    coupon_payment_lag_days: Optional[int] = 3
 
 
 def get_dev_portfolio(db: Session):
@@ -359,6 +361,11 @@ def delete_stock(stock_id: str, request: Request, db: Session = Depends(get_db))
     return {"status": "ok", "message": "Stock deleted"}
 
 
+@router.delete("/stocks/{stock_id}")
+def delete_stock_plural(stock_id: str, request: Request, db: Session = Depends(get_db)):
+    return delete_stock(stock_id, request, db)
+
+
 @router.post("/crypto")
 def add_crypto(payload: CryptoInput, request: Request, db: Session = Depends(get_db)):
     portfolio = get_write_portfolio(request, db)
@@ -456,16 +463,21 @@ def delete_crypto(crypto_id: str, request: Request, db: Session = Depends(get_db
     return {"status": "ok", "message": "Crypto deleted"}
 
 
+
 @router.post("/cash")
 def upsert_cash(payload: CashInput, request: Request, db: Session = Depends(get_db)):
     portfolio = get_write_portfolio(request, db)
     if not portfolio:
         raise HTTPException(status_code=404, detail="No portfolio found")
 
-    if payload.amount < 0:
+    allowed_currencies = {"USD", "TWD", "HKD", "JPY", "KRW", "EUR", "GBP", "USDT", "USDC"}
+    currency = _clean_symbol(payload.currency, portfolio.base_currency or "USD")
+    if currency not in allowed_currencies:
+        raise HTTPException(status_code=400, detail="Unsupported cash currency")
+
+    if payload.amount <= 0:
         raise HTTPException(status_code=400, detail="Cash amount must be positive")
 
-    currency = _clean_symbol(payload.currency, portfolio.base_currency or "USD")
     cash = (
         db.query(CashPosition)
         .filter(
@@ -553,6 +565,7 @@ def delete_cash(cash_id: str, request: Request, db: Session = Depends(get_db)):
     return {"status": "ok", "message": "Cash deleted"}
 
 
+
 @router.post("/fcn")
 def add_fcn(payload: FCNInput, request: Request, db: Session = Depends(get_db)):
     portfolio = get_write_portfolio(request, db)
@@ -611,6 +624,9 @@ def add_fcn(payload: FCNInput, request: Request, db: Session = Depends(get_db)):
     db.add(fcn)
     db.commit()
     db.refresh(fcn)
+    replace_fcn_schedule(db, fcn, payload.coupon_payment_lag_days or 3)
+    db.commit()
+    db.refresh(fcn)
 
     return {"status": "ok", "message": "FCN added", "id": fcn.id}
 
@@ -646,3 +662,42 @@ def delete_fcn(fcn_id: str, request: Request, db: Session = Depends(get_db)):
     db.commit()
 
     return {"status": "ok", "message": "FCN deleted"}
+
+
+@router.delete("/fcns/{fcn_id}")
+def delete_fcn_plural(fcn_id: str, request: Request, db: Session = Depends(get_db)):
+    return delete_fcn(fcn_id, request, db)
+
+
+@router.get("/fcn/{fcn_id}/schedule")
+def get_fcn_schedule(fcn_id: str, request: Request, db: Session = Depends(get_db)):
+    portfolio = get_request_portfolio(request, db)
+    fcn = (
+        db.query(FCNPosition)
+        .filter(
+            FCNPosition.id == fcn_id,
+            FCNPosition.portfolio_id == portfolio.id,
+        )
+        .first()
+    )
+    if not fcn:
+        raise HTTPException(status_code=404, detail="FCN position not found")
+
+    schedules = (
+        db.query(FCNCouponSchedule)
+        .filter(FCNCouponSchedule.fcn_position_id == fcn.id)
+        .order_by(FCNCouponSchedule.period_index.asc())
+        .all()
+    )
+    return [
+        {
+            "id": row.id,
+            "fcn_position_id": row.fcn_position_id,
+            "period_index": row.period_index,
+            "observation_start_date": row.observation_start_date,
+            "observation_date": row.observation_date,
+            "payment_date": row.payment_date,
+            "status": row.status,
+        }
+        for row in schedules
+    ]
