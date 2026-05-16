@@ -43,6 +43,7 @@ class NewsService:
 
     def get_portfolio_news(self, portfolio: Portfolio) -> PortfolioNewsResponse:
         context = self._build_portfolio_context(portfolio)
+        self._release_db_connection()
         if self.skip_provider:
             return PortfolioNewsResponse(
                 portfolio_id=str(portfolio.id),
@@ -321,6 +322,22 @@ class NewsService:
             return self._trim_narrative("".join(parts))
         except Exception:
             return ""
+
+    def _release_db_connection(self) -> None:
+        """End the read transaction before slow external news calls.
+
+        SQLAlchemy sessions keep a checked-out connection for the active
+        transaction after the first query. News fetching can be slow or
+        rate-limited, so release the connection once portfolio context is
+        materialized.
+        """
+        try:
+            self.db.commit()
+        except Exception:
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
 
     def _trim_narrative(self, text: str, max_length: int = 120) -> str:
         normalized = str(text or "").strip()

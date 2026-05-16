@@ -56,7 +56,7 @@ class PortfolioIntelligenceService:
         self.narrative_engine = IntelligenceNarrativeEngine()
         self.brief_engine = IntelligenceBriefEngine()
         self.memory_service = IntelligenceMemoryService()
-        self.persistent_memory = IntelligenceMemoryStore()
+        self.persistent_memory = IntelligenceMemoryStore(db=db)
         self.long_memory_engine = LongTermMemoryEngine(self.persistent_memory)
         self.scenario_engine = ScenarioEngine()
         self.graph_engine = IntelligenceGraphEngine()
@@ -335,7 +335,7 @@ class PortfolioIntelligenceService:
         cash_value = sum(self._float(item.get("amount")) for item in cash_positions)
         fcn_value = sum(self._float(item.get("notional_amount")) for item in fcn_positions)
 
-        return {
+        payload = {
             "portfolio_id": str(portfolio.id),
             "portfolio_name": str(portfolio.name),
             "total_value": stock_value + crypto_value + cash_value + fcn_value,
@@ -348,10 +348,14 @@ class PortfolioIntelligenceService:
             "cash_summary": cash_positions,
             "fcn_positions": fcn_positions,
         }
+        self._release_db_connection()
+        return payload
 
     def _fcn_analysis(self, portfolio: Portfolio) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
-        for fcn in self._fcns(portfolio):
+        fcns = self._fcns(portfolio)
+        self._release_db_connection()
+        for fcn in fcns:
             try:
                 analysis = self.fcn_monitor.analyze(fcn)
                 if analysis:
@@ -424,3 +428,19 @@ class PortfolioIntelligenceService:
             return float(value or 0)
         except (TypeError, ValueError):
             return 0.0
+
+    def _release_db_connection(self) -> None:
+        """End read transactions before slow provider/analysis work.
+
+        The request-scoped Session remains usable after commit, but the
+        underlying connection is returned to the pool. This prevents slow
+        intelligence/news/market analysis from holding scarce Postgres
+        connections while doing non-DB work.
+        """
+        try:
+            self.db.commit()
+        except Exception:
+            try:
+                self.db.rollback()
+            except Exception:
+                pass

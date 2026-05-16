@@ -23,6 +23,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy.orm import Session
+
 from app.core.database import SessionLocal
 from app.models.models import IntelligenceMemorySnapshot
 from app.services.intelligence.compliance import compliance_filter
@@ -41,10 +43,12 @@ class IntelligenceMemoryStore:
         self,
         base_dir: Path | None = None,
         max_snapshots: int = 50,
+        db: Session | None = None,
     ) -> None:
         # base_dir retained for API compatibility; persistence is now via DB.
         self.base_dir = base_dir
         self.max_snapshots = max(1, int(max_snapshots or 1))
+        self.db = db
 
     # ------------------------------------------------------------------
     # write path
@@ -64,7 +68,7 @@ class IntelligenceMemoryStore:
             logger.exception("intelligence_memory snapshot build failed")
             return
 
-        db = SessionLocal()
+        db, owns_session = self._get_db()
         try:
             record = IntelligenceMemorySnapshot(
                 portfolio_id=str(portfolio_id),
@@ -87,10 +91,11 @@ class IntelligenceMemoryStore:
             except Exception:
                 pass
         finally:
-            try:
-                db.close()
-            except Exception:
-                pass
+            if owns_session:
+                try:
+                    db.close()
+                except Exception:
+                    pass
 
     def _build_payload(
         self,
@@ -160,7 +165,7 @@ class IntelligenceMemoryStore:
     # ------------------------------------------------------------------
     def get_recent_history(self, portfolio_id: str, limit: int = 10) -> list[dict[str, Any]]:
         clamped_limit = max(1, int(limit or 1))
-        db = SessionLocal()
+        db, owns_session = self._get_db()
         try:
             rows = (
                 db.query(IntelligenceMemorySnapshot)
@@ -185,10 +190,11 @@ class IntelligenceMemoryStore:
             logger.exception("intelligence_memory read failed")
             return []
         finally:
-            try:
-                db.close()
-            except Exception:
-                pass
+            if owns_session:
+                try:
+                    db.close()
+                except Exception:
+                    pass
 
     def compare_historical_drift(
         self, portfolio_id: str, current_scores: IntelligenceScore
@@ -224,3 +230,8 @@ class IntelligenceMemoryStore:
             return float(value or 0)
         except (TypeError, ValueError):
             return 0.0
+
+    def _get_db(self) -> tuple[Session, bool]:
+        if self.db is not None:
+            return self.db, False
+        return SessionLocal(), True

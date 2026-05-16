@@ -1,9 +1,11 @@
 import logging
 import os
+from fastapi import Request
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
+from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
 
 try:
     from app.api.v1.api import api_router
@@ -77,6 +79,21 @@ app.add_middleware(
 # id is in scope for every downstream layer (including latency logs).
 app.add_middleware(RequestLatencyMiddleware)
 app.add_middleware(RequestIDMiddleware)
+
+
+@app.exception_handler(SQLAlchemyTimeoutError)
+async def sqlalchemy_timeout_handler(request: Request, exc: SQLAlchemyTimeoutError):
+    logger.exception(
+        "database connection checkout timed out",
+        extra={"path": str(request.url.path)},
+    )
+    return JSONResponse(
+        status_code=503,
+        content={
+            "status": "unavailable",
+            "detail": "Database is temporarily busy. Please retry shortly.",
+        },
+    )
 
 
 @app.get("/")
