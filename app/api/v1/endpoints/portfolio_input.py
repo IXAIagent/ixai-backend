@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.core.cache import invalidate_portfolio_caches
 from app.core.config import is_development_env
 from app.core.database import get_db
 from app.core.security import decode_access_token, get_password_hash
@@ -274,6 +275,10 @@ def _calculate_current_value(quantity: Optional[float], current_price: Optional[
     return quantity * current_price
 
 
+def _invalidate_after_commit(portfolio_id: str) -> None:
+    invalidate_portfolio_caches(str(portfolio_id))
+
+
 @router.post("/stock")
 def add_stock(payload: StockInput, request: Request, db: Session = Depends(get_db)):
     portfolio = get_write_portfolio(request, db)
@@ -291,6 +296,7 @@ def add_stock(payload: StockInput, request: Request, db: Session = Depends(get_d
 
     db.add(stock)
     db.commit()
+    _invalidate_after_commit(portfolio.id)
     db.refresh(stock)
 
     return {"status": "ok", "message": "Stock added", "id": stock.id}
@@ -332,6 +338,7 @@ def update_stock(stock_id: str, payload: StockUpdateInput, request: Request, db:
 
     stock.current_value = _calculate_current_value(stock.quantity, stock.current_price)
     db.commit()
+    _invalidate_after_commit(portfolio.id)
     db.refresh(stock)
 
     return {"status": "ok", "message": "Stock updated", "id": stock.id}
@@ -357,6 +364,7 @@ def delete_stock(stock_id: str, request: Request, db: Session = Depends(get_db))
 
     db.delete(stock)
     db.commit()
+    _invalidate_after_commit(portfolio.id)
 
     return {"status": "ok", "message": "Stock deleted"}
 
@@ -387,6 +395,7 @@ def add_crypto(payload: CryptoInput, request: Request, db: Session = Depends(get
 
     db.add(crypto)
     db.commit()
+    _invalidate_after_commit(portfolio.id)
     db.refresh(crypto)
 
     return {"status": "ok", "message": "Crypto added", "id": crypto.id}
@@ -434,6 +443,7 @@ def update_crypto(crypto_id: str, payload: CryptoUpdateInput, request: Request, 
 
     crypto.current_value = _calculate_current_value(crypto.quantity, crypto.current_price)
     db.commit()
+    _invalidate_after_commit(portfolio.id)
     db.refresh(crypto)
 
     return {"status": "ok", "message": "Crypto updated", "id": crypto.id}
@@ -459,6 +469,7 @@ def delete_crypto(crypto_id: str, request: Request, db: Session = Depends(get_db
 
     db.delete(crypto)
     db.commit()
+    _invalidate_after_commit(portfolio.id)
 
     return {"status": "ok", "message": "Crypto deleted"}
 
@@ -498,6 +509,7 @@ def upsert_cash(payload: CashInput, request: Request, db: Session = Depends(get_
         db.add(cash)
 
     db.commit()
+    _invalidate_after_commit(portfolio.id)
     db.refresh(cash)
 
     return {"status": "ok", "message": "Cash updated", "id": cash.id}
@@ -536,6 +548,7 @@ def update_cash(cash_id: str, payload: CashUpdateInput, request: Request, db: Se
         cash.amount = payload.amount
 
     db.commit()
+    _invalidate_after_commit(portfolio.id)
     db.refresh(cash)
 
     return {"status": "ok", "message": "Cash updated", "id": cash.id}
@@ -561,6 +574,7 @@ def delete_cash(cash_id: str, request: Request, db: Session = Depends(get_db)):
 
     db.delete(cash)
     db.commit()
+    _invalidate_after_commit(portfolio.id)
 
     return {"status": "ok", "message": "Cash deleted"}
 
@@ -626,6 +640,7 @@ def add_fcn(payload: FCNInput, request: Request, db: Session = Depends(get_db)):
     db.refresh(fcn)
     replace_fcn_schedule(db, fcn, payload.coupon_payment_lag_days or 3)
     db.commit()
+    _invalidate_after_commit(portfolio.id)
     db.refresh(fcn)
 
     return {"status": "ok", "message": "FCN added", "id": fcn.id}
@@ -660,6 +675,7 @@ def delete_fcn(fcn_id: str, request: Request, db: Session = Depends(get_db)):
 
     db.delete(fcn)
     db.commit()
+    _invalidate_after_commit(portfolio.id)
 
     return {"status": "ok", "message": "FCN deleted"}
 

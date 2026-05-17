@@ -59,6 +59,18 @@ class TTLMemoCache:
         except Exception:
             pass
 
+    def invalidate_matching(self, predicate: Callable[[Any], bool]) -> int:
+        """Remove all keys matching ``predicate`` and return removal count."""
+        try:
+            with self._lock:
+                keys = [key for key in list(self._store.keys()) if predicate(key)]
+                for key in keys:
+                    self._store.pop(key, None)
+                return len(keys)
+        except Exception:
+            logger.exception("cache predicate invalidation failed")
+            return 0
+
     def clear(self) -> None:
         try:
             with self._lock:
@@ -86,3 +98,31 @@ engine_summary_cache = TTLMemoCache(maxsize=128, ttl_seconds=30.0)
 
 def now_monotonic() -> float:
     return time.monotonic()
+
+
+def invalidate_portfolio_caches(portfolio_id: str) -> None:
+    """Invalidate cached intelligence for one portfolio only."""
+    normalized_id = str(portfolio_id or "")
+    if not normalized_id:
+        return
+
+    analysis_removed = analysis_context_cache.invalidate_matching(
+        lambda key: isinstance(key, tuple)
+        and len(key) >= 2
+        and key[0] == "analysis_context"
+        and str(key[1]) == normalized_id
+    )
+    engine_removed = engine_summary_cache.invalidate_matching(
+        lambda key: isinstance(key, tuple)
+        and len(key) >= 3
+        and key[0] == "engine"
+        and str(key[2]) == normalized_id
+    )
+    logger.info(
+        "portfolio caches invalidated",
+        extra={
+            "portfolio_id": normalized_id,
+            "analysis_context_removed": analysis_removed,
+            "engine_summary_removed": engine_removed,
+        },
+    )
