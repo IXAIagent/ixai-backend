@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.models.models import CryptoPosition, FCNPosition, StockPosition
 from app.services.alert_service import build_alert_key, close_resolved_alerts, ensure_open_alert
+from app.services.crypto_subtypes import get_crypto_base_type
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -64,7 +65,7 @@ def check_crypto_risks(db: Session, portfolio_id: str, active_keys: set[tuple[st
 
     for c in cryptos:
         symbol = c.symbol or "CRYPTO"
-        asset_type = str(c.asset_type or "").lower()
+        asset_type = get_crypto_base_type(c.asset_type)
         leverage = _safe_float(c.leverage, 0)
         current_price = _safe_float(c.current_price, 0)
         grid_upper = _safe_float(c.grid_upper, 0)

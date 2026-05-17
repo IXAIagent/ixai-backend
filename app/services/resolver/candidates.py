@@ -9,6 +9,7 @@ from app.services.normalization import (
 from app.services.normalization.crypto_master import CRYPTO_ASSETS
 from app.services.normalization.tw_stock_master import TW_STOCKS
 from app.services.market_data.yahoo_provider import YahooFinanceProvider
+from app.services.crypto_subtypes import get_crypto_base_type
 
 
 def clean_query(value: str | None) -> str:
@@ -16,8 +17,10 @@ def clean_query(value: str | None) -> str:
 
 
 def normalize_asset_type(asset_type: str | None) -> str | None:
-    value = clean_query(asset_type).lower()
-    if value in {"crypto", "grid", "dual"}:
+    if not str(asset_type or "").strip():
+        return None
+    value = get_crypto_base_type(asset_type)
+    if value in {"crypto", "spot", "grid", "dual", "stablecoin_earn"}:
         return "crypto"
     if value in {"stock", "fcn_underlying"}:
         return "stock"

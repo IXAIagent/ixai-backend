@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.models.models import CashPosition, CryptoPosition, FCNPosition, Portfolio, StockPosition
+from app.services.crypto_subtypes import get_crypto_base_type
 from app.services.fcn_monitor_service import FCNMonitorService
 from app.services.intelligence.brief_engine import IntelligenceBriefEngine
 from app.services.intelligence.correlation_engine import IntelligenceCorrelationEngine
@@ -395,6 +396,7 @@ class PortfolioIntelligenceService:
             "id": getattr(item, "id", None),
             "symbol": getattr(item, "symbol", None),
             "asset_type": getattr(item, "asset_type", None),
+            "asset_type_base": get_crypto_base_type(getattr(item, "asset_type", None)),
             "quantity": quantity,
             "avg_price": self._float(getattr(item, "avg_price", 0)),
             "current_price": current_price,

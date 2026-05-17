@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from app.services.normalization.crypto_master import CRYPTO_ASSETS
 from app.services.normalization.tw_stock_master import TW_STOCKS
+from app.services.crypto_subtypes import get_crypto_base_type
 
 DEFAULT_CRYPTO_QUOTE = "USDT"
-CRYPTO_ASSET_TYPES = {"crypto", "grid", "dual"}
+CRYPTO_ASSET_TYPES = {"crypto", "spot", "grid", "dual", "stablecoin_earn"}
 
 
 def _clean(value: str | None) -> str:
@@ -68,7 +69,7 @@ def normalize_crypto_symbol(input: str) -> str:
 
 
 def normalize_asset_symbol(input: str, asset_type: str | None = None) -> str:
-    normalized_type = _clean(asset_type).lower()
+    normalized_type = get_crypto_base_type(asset_type) if str(asset_type or "").strip() else ""
     symbol = _clean(input)
 
     if normalized_type in CRYPTO_ASSET_TYPES:
@@ -81,7 +82,7 @@ def normalize_asset_symbol(input: str, asset_type: str | None = None) -> str:
 
 
 def get_asset_display_name(symbol: str, asset_type: str | None = None) -> str:
-    normalized_type = _clean(asset_type).lower()
+    normalized_type = get_crypto_base_type(asset_type) if str(asset_type or "").strip() else ""
     raw_symbol = _clean(symbol)
 
     if normalized_type in CRYPTO_ASSET_TYPES or raw_symbol in CRYPTO_ALIAS_INDEX:
@@ -143,4 +144,3 @@ def get_crypto_yahoo_fallback_symbol(input: str) -> str | None:
         return symbol
 
     return None
-

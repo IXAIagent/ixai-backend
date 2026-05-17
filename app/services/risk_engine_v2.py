@@ -5,6 +5,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.models.models import CryptoPosition, FCNPosition, StockPosition
+from app.services.crypto_subtypes import get_crypto_base_type
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -161,7 +162,7 @@ def _crypto_source(
         current_price = _safe_float(c.current_price, 0)
         grid_lower = _safe_float(c.grid_lower, 0)
         grid_upper = _safe_float(c.grid_upper, 0)
-        asset_type = str(c.asset_type or "").lower()
+        asset_type = get_crypto_base_type(c.asset_type)
 
         if asset_type != "grid" or current_price <= 0 or grid_lower <= 0 or grid_upper <= 0:
             continue

@@ -3,6 +3,8 @@ from __future__ import annotations
 from math import isfinite
 from typing import Any
 
+from app.services.crypto_subtypes import get_crypto_base_type
+
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
     try:
@@ -206,12 +208,25 @@ def _crypto_risk(summary: dict[str, Any], total_value: float) -> tuple[dict[str,
         current_price = _safe_optional_float(position.get("current_price"))
         grid_lower = _safe_optional_float(position.get("grid_lower"))
         grid_upper = _safe_optional_float(position.get("grid_upper"))
+        base_type = get_crypto_base_type(position.get("asset_type"))
 
         if leverage > 5:
             score = min(100, max(score, 65) + 10)
             messages.append(f"{symbol} 槓桿約 {leverage:g}x，需留意波動放大")
 
+        if base_type == "dual":
+            score = max(score, 45)
+            messages.append(f"{symbol} Dual Investment 需留意目標價與結算日風險")
+            continue
+
+        if base_type == "stablecoin_earn":
+            score = max(score, 32)
+            messages.append(f"{symbol} Stablecoin Earn 需留意穩定幣與平台曝險")
+            continue
+
         if (
+            base_type != "grid"
+            or
             current_price is None
             or grid_lower is None
             or grid_upper is None

@@ -45,6 +45,7 @@ from app.services.normalization import (
     normalize_crypto_symbol,
     normalize_stock_symbol,
 )
+from app.services.crypto_subtypes import get_crypto_base_type
 
 SymbolType = Literal["crypto", "stock"]
 
@@ -53,7 +54,7 @@ class MarketDataService:
     DEFAULT_CRYPTO_QUOTE = "USDT"
     _price_cache = TTLCache(maxsize=500, ttl=60)
 
-    CRYPTO_ASSET_TYPES = {"crypto", "grid", "dual"}
+    CRYPTO_ASSET_TYPES = {"crypto", "spot", "grid", "dual", "stablecoin_earn"}
     CRYPTO_SYMBOLS = {
         "BTC",
         "ETH",
@@ -152,7 +153,7 @@ class MarketDataService:
         return "crypto" if self._should_use_binance(normalized_symbol, asset_type) else "stock"
 
     def _should_use_binance(self, symbol: str, asset_type: str | None) -> bool:
-        normalized_asset_type = str(asset_type or "").strip().lower()
+        normalized_asset_type = get_crypto_base_type(asset_type) if str(asset_type or "").strip() else ""
         if normalized_asset_type in self.CRYPTO_ASSET_TYPES:
             return True
 
@@ -257,14 +258,15 @@ class MarketDataService:
         )
 
     def _normalize_symbol(self, symbol: str, asset_type: str | None = None) -> str:
-        if str(asset_type or "").strip().lower() in self.CRYPTO_ASSET_TYPES:
+        normalized_asset_type = get_crypto_base_type(asset_type) if str(asset_type or "").strip() else ""
+        if normalized_asset_type in self.CRYPTO_ASSET_TYPES:
             return normalize_crypto_symbol(symbol)
         return normalize_stock_symbol(symbol)
 
     def _cache_key(self, normalized_symbol: str, asset_type: str | None) -> tuple[str, str]:
         return (
             str(normalized_symbol or "").strip().upper(),
-            str(asset_type or "").strip().lower(),
+            get_crypto_base_type(asset_type),
         )
 
     def _cache_result(

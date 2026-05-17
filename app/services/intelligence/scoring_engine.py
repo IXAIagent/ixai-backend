@@ -4,6 +4,7 @@ from typing import Any
 
 from app.services.intelligence.schemas import IntelligenceScore
 from app.services.news.schemas import NewsArticle
+from app.services.crypto_subtypes import get_crypto_base_type
 
 
 AI_CHIP_SYMBOLS = {"NVDA", "MSFT", "AAPL", "TSM", "2330.TW", "AVGO", "MRVL", "PLTR", "MDB", "AMD"}
@@ -137,6 +138,16 @@ class IntelligenceScoringEngine:
             score += min((crypto_value / total_value) * 120, 45)
         if any(self._float(position.get("leverage")) > 1 for position in crypto_positions):
             score += 20
+        base_types = {
+            get_crypto_base_type(position.get("asset_type"))
+            for position in crypto_positions
+        }
+        if "grid" in base_types:
+            score += 10
+        if "dual" in base_types:
+            score += 8
+        if "stablecoin_earn" in base_types:
+            score += 5
         for article in articles:
             symbol = str(article.symbol or "").upper()
             title = str(article.title or "").lower()
