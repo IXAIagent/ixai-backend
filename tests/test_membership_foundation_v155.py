@@ -114,3 +114,36 @@ def test_temporary_migration_status_route_registered():
     from app.main import app
 
     assert "/admin/migration-status" in [route.path for route in app.routes]
+
+
+def test_temporary_membership_migration_route_registered():
+    from app.main import app
+
+    assert "/admin/run-membership-migration" in [route.path for route in app.routes]
+
+
+def test_temporary_membership_migration_requires_configured_token(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    monkeypatch.delenv("MIGRATION_BOOTSTRAP_TOKEN", raising=False)
+    response = TestClient(app).post("/admin/run-membership-migration")
+
+    assert response.status_code == 403
+    assert response.json()["error"] == "migration_bootstrap_not_configured"
+
+
+def test_temporary_membership_migration_rejects_wrong_token(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    monkeypatch.setenv("MIGRATION_BOOTSTRAP_TOKEN", "correct-token")
+    response = TestClient(app).post(
+        "/admin/run-membership-migration",
+        headers={"x-ixai-migration-token": "wrong-token"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"] == "migration_bootstrap_forbidden"

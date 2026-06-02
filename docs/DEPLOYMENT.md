@@ -134,6 +134,104 @@ Expected successful production result:
 }
 ```
 
+## v1.55.2 Production Migration Execution
+
+Production status before v1.55.2 execution was observed as either `0009` during
+manual inspection or `0008` during follow-up verification. The Alembic chain is
+linear:
+
+```text
+0008_fcn_coupon_sched
+→ 0009_supabase_account_link
+→ 0010_membership_foundation
+```
+
+Observed production state:
+
+```text
+currentRevision = 0008_fcn_coupon_sched or 0009_supabase_account_link
+expectedRevision = 0010_membership_foundation
+subscriptions = false
+entitlements = false
+```
+
+Because Render Free may not provide Shell / One-Off Jobs, v1.55.2 adds a
+temporary protected migration executor:
+
+```text
+POST /admin/run-membership-migration
+```
+
+Security model:
+
+- Requires `MIGRATION_BOOTSTRAP_TOKEN` to be set in the backend environment.
+- Requires request header `X-IXAI-MIGRATION-TOKEN`.
+- Returns `403` if the token env var is missing.
+- Returns `403` if the caller token does not match.
+- Runs only `alembic upgrade head`.
+- Refuses execution unless the current revision is `0008_fcn_coupon_sched`,
+  `0009_supabase_account_link`, or the database is already migrated.
+- Does not expose database URLs, secrets, or token values.
+
+Render execution sequence:
+
+1. Deploy backend containing v1.55.2.
+2. In Render environment variables, temporarily set:
+
+```text
+MIGRATION_BOOTSTRAP_TOKEN=<strong one-time token>
+```
+
+3. Verify status:
+
+```bash
+curl https://ixai-backend.onrender.com/admin/migration-status
+```
+
+4. Execute migration:
+
+```bash
+curl -X POST https://ixai-backend.onrender.com/admin/run-membership-migration \
+  -H "X-IXAI-MIGRATION-TOKEN: <strong one-time token>"
+```
+
+5. Verify status again:
+
+```bash
+curl https://ixai-backend.onrender.com/admin/migration-status
+```
+
+Expected final result:
+
+```text
+currentRevision = 0010_membership_foundation
+subscriptions = true
+entitlements = true
+```
+
+6. Verify account-link and membership:
+
+```bash
+curl -X POST https://ixai-backend.onrender.com/api/v1/integrations/supabase/account-link \
+  -H "content-type: application/json" \
+  -d '{"provider":"supabase","external_user_id":"<test-id>","email":"<masked-test-email>","name":"Migration Check"}'
+
+curl "https://ixai-backend.onrender.com/api/v1/membership/me?provider=supabase&external_user_id=<test-id>"
+```
+
+7. Remove `MIGRATION_BOOTSTRAP_TOKEN` from Render.
+8. Deploy cleanup code that removes both temporary admin migration endpoints.
+
+Risk assessment:
+
+- The endpoint is temporary and should never remain in production long-term.
+- Token must be strong, one-time, and removed immediately after migration.
+- If migration returns a non-0010 status, stop and inspect Render logs before
+  retrying.
+- Do not use this endpoint for future routine migrations; prefer protected
+  CI/CD, Render paid Shell / Jobs, Railway one-off commands, or internal ops
+  tooling with strong authentication.
+
 ## Health Checks
 
 Use:
