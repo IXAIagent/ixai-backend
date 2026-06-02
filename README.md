@@ -96,3 +96,25 @@ Frontend verification note:
 - The production app health proxy reached this backend when `IXAI_BACKEND_URL`
   was configured.
 - Full browser-click linking still requires a real Supabase App session.
+
+## v1.54.1 Real Supabase Session Button Test
+
+Local backend verification used:
+
+```text
+/tmp/ixai_v1541_e2e.db
+```
+
+Results:
+
+- Alembic upgraded the temporary DB to `0009_supabase_account_link`.
+- `GET /health` returned `{"status":"ok"}`.
+- `GET /readyz` returned ready database state.
+- The frontend health proxy reached this backend with `IXAI_BACKEND_URL`
+  configured.
+- The frontend account-link route remained closed without a Supabase session.
+
+Blocked:
+
+- No authenticated Supabase App browser session was available locally or in
+  production, so the `/account` button-click flow could not be completed.
