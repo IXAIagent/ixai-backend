@@ -87,6 +87,37 @@ Future migrations should use a protected operational path:
 
 Do not reintroduce unauthenticated or long-lived migration execution endpoints.
 
+## v1.56.0 Entitlements / Feature Gates
+
+Backend entitlement endpoint:
+
+```text
+GET /api/v1/entitlements/me
+```
+
+The endpoint maps linked account membership into a sanitized feature-gate map.
+It should be called by the IXAI App Next API proxy, not directly by browser code
+for protected workflows.
+
+Layering:
+
+- Membership: identity / plan layer (`free`, `personal`, `pro`, `enterprise`).
+- Entitlements: permission / feature-access layer.
+- Portfolio, FCN Monitoring, and Risk Engine must remain locked unless their
+  entitlement keys are enabled.
+
+Current Free entitlement baseline:
+
+```text
+daily_brief = true
+weekly_brief = true
+watchlist = true
+portfolio = false
+fcn_monitoring = false
+risk_engine = false
+ai_copilot = false
+```
+
 ## Health Checks
 
 Use:

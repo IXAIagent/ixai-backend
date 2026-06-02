@@ -4,6 +4,7 @@ from app.api.v1.endpoints import auth
 from app.api.v1.endpoints import accounts
 from app.api.v1.endpoints import assets
 from app.api.v1.endpoints import dashboard
+from app.api.v1.endpoints import entitlements
 from app.api.v1.endpoints import imports
 from app.api.v1.endpoints import intelligence
 from app.api.v1.endpoints import integrations
@@ -18,6 +19,7 @@ api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(accounts.router)
 api_router.include_router(assets.router, prefix="/assets", tags=["assets"])
 api_router.include_router(dashboard.router)
+api_router.include_router(entitlements.router)
 api_router.include_router(imports.router, prefix="/imports", tags=["imports"])
 api_router.include_router(intelligence.router)
 api_router.include_router(integrations.router)

@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.api.v1.endpoints.entitlements import get_entitlements_me
 from app.api.v1.endpoints.integrations import SupabaseAccountLinkRequest, link_supabase_account
 from app.api.v1.endpoints.membership import get_membership_me
 from app.core.database import Base
@@ -104,10 +105,40 @@ def test_membership_endpoint_returns_not_linked(db_session):
     assert exc.value.detail == "not_linked"
 
 
+def test_entitlements_endpoint_returns_feature_gate_map(db_session):
+    _link(db_session, "entitlements-user-1")
+    response = get_entitlements_me(
+        provider="supabase",
+        external_user_id="entitlements-user-1",
+        db=db_session,
+    )
+
+    assert response.plan == "free"
+    assert response.entitlements["daily_brief"] is True
+    assert response.entitlements["weekly_brief"] is True
+    assert response.entitlements["watchlist"] is True
+    assert response.entitlements["portfolio"] is False
+    assert response.entitlements["fcn_monitoring"] is False
+    assert response.entitlements["risk_engine"] is False
+
+
+def test_entitlements_endpoint_returns_not_linked(db_session):
+    with pytest.raises(HTTPException) as exc:
+        get_entitlements_me(
+            provider="supabase",
+            external_user_id="missing-entitlements-user",
+            db=db_session,
+        )
+
+    assert exc.value.status_code == 404
+    assert exc.value.detail == "not_linked"
+
+
 def test_membership_route_registered():
     from app.main import app
 
     assert "/api/v1/membership/me" in [route.path for route in app.routes]
+    assert "/api/v1/entitlements/me" in [route.path for route in app.routes]
 
 
 def test_temporary_migration_routes_removed():

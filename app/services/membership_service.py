@@ -67,6 +67,31 @@ class MembershipService:
             .first()
         )
 
+    def find_account_by_id(self, account_id: str | None) -> Account | None:
+        account_id = str(account_id or "").strip()
+
+        if not account_id:
+            return None
+
+        return self.db.query(Account).filter(Account.id == account_id).first()
+
+    def snapshot_for_identity(
+        self,
+        *,
+        account_id: str | None = None,
+        provider: str | None = None,
+        external_user_id: str | None = None,
+    ) -> MembershipSnapshot | None:
+        account = self.find_account_by_id(account_id)
+
+        if not account:
+            account = self.find_account_by_external_identity(provider, external_user_id)
+
+        if not account:
+            return None
+
+        return self.ensure_default_membership(str(account.id))
+
     def get_account_membership(self, account_id: str) -> Subscription | None:
         return (
             self.db.query(Subscription)

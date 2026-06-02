@@ -196,6 +196,56 @@ Future migration operations should use protected CI/CD, paid Render Shell /
 Jobs, Railway one-off commands, or a formal admin-only internal migration
 mechanism with strong authentication.
 
+## v1.56.0 Unified Identity Foundation
+
+The backend now exposes the first feature-gate entitlement endpoint:
+
+```text
+GET /api/v1/entitlements/me
+```
+
+Supported lookup parameters:
+
+```text
+provider=supabase
+external_user_id=<supabase_user_id>
+```
+
+Response:
+
+```json
+{
+  "plan": "free",
+  "entitlements": {
+    "daily_brief": true,
+    "weekly_brief": true,
+    "watchlist": true,
+    "pro_preview": false,
+    "portfolio": false,
+    "fcn_monitoring": false,
+    "risk_engine": false,
+    "ai_copilot": false
+  }
+}
+```
+
+Architecture:
+
+- Membership is the identity / plan layer.
+- Entitlements are the permission / feature-access layer.
+- Portfolio / FCN / Risk Engine access must be controlled by entitlement checks.
+- Free linked accounts keep public intelligence access but do not unlock Pro features.
+
+Still out of scope:
+
+- Stripe.
+- Billing.
+- Portfolio Center.
+- FCN Center.
+- Risk Engine UI.
+- AI Copilot.
+- Broker integrations.
+
 ## v1.53 Supabase Account Link Endpoint
 
 The backend now exposes the minimum server-side account-link endpoint expected by
