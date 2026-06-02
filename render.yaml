@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: ixai-backend
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python3 -m uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: APP_ENV
+        value: production
+      - key: BACKEND_CORS_ORIGINS
+        value: https://app.ixuan.ai
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false

@@ -1,5 +1,69 @@
 # IXAI Website
 
+## v1.54.4 Backend Deployment Foundation
+
+The backend is deployment-ready as a FastAPI service with:
+
+- Entry point: `app.main:app`
+- Production start command:
+
+```bash
+python3 -m uvicorn app.main:app --host 0.0.0.0 --port $PORT
+```
+
+- Health checks:
+
+```text
+GET /health
+GET /readyz
+```
+
+Required production environment variables:
+
+```text
+DATABASE_URL
+SECRET_KEY
+BACKEND_CORS_ORIGINS
+ENVIRONMENT=production
+```
+
+Recommended:
+
+```text
+APP_ENV=production
+```
+
+Deployment notes:
+
+- Use PostgreSQL for production.
+- Run migrations before production traffic:
+
+```bash
+python3 -m alembic upgrade head
+```
+
+- `DATABASE_URL` supports PostgreSQL; `postgres://` URLs are normalized to
+  `postgresql://`.
+- `SECRET_KEY` is required in production-like environments.
+- `APP_ENV=development` is required if using the local development secret
+  fallback.
+- CORS must explicitly include the production frontend origin, such as
+  `https://app.ixuan.ai`.
+
+See `docs/DEPLOYMENT.md` for Render / Railway deployment steps.
+
+After deployment, set the frontend Vercel environment variable:
+
+```text
+IXAI_BACKEND_URL=https://<backend-public-url>
+```
+
+Then redeploy `app/ixai-web-app` and verify:
+
+```text
+GET /api/backend/health
+```
+
 ## v1.53 Supabase Account Link Endpoint
 
 The backend now exposes the minimum server-side account-link endpoint expected by
