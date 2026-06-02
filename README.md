@@ -71,3 +71,28 @@ Local DB note:
 - The existing local `ixai.db` was backed up and then restored because its
   Alembic marker was behind existing tables.
 - No destructive local data migration was kept.
+
+## v1.54 Real Account Linking Verification
+
+Local backend verification used a fresh temporary SQLite database:
+
+```text
+/tmp/ixai_v154_e2e.db
+```
+
+Results:
+
+- Alembic upgraded the temporary DB to `0009_supabase_account_link`.
+- `GET /health` returned `{"status":"ok"}`.
+- `GET /readyz` returned ready database state.
+- First direct `POST /api/v1/integrations/supabase/account-link` returned
+  `created: true`.
+- Repeating the same payload returned `created: false`.
+- The backend created / found `User`, `Account`, and owner `AccountMembership`.
+- `pro_access_status` remained `connected`, not `active`.
+
+Frontend verification note:
+
+- The production app health proxy reached this backend when `IXAI_BACKEND_URL`
+  was configured.
+- Full browser-click linking still requires a real Supabase App session.
