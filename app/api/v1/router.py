@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import auth
 from app.api.v1.endpoints import accounts
+from app.api.v1.endpoints import admin_entitlements
 from app.api.v1.endpoints import assets
 from app.api.v1.endpoints import dashboard
 from app.api.v1.endpoints import entitlements
@@ -17,6 +18,7 @@ api_router = APIRouter()
 
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(accounts.router)
+api_router.include_router(admin_entitlements.router)
 api_router.include_router(assets.router, prefix="/assets", tags=["assets"])
 api_router.include_router(dashboard.router)
 api_router.include_router(entitlements.router)

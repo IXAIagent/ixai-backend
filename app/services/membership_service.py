@@ -34,6 +34,14 @@ FREE_ENTITLEMENTS = {
     "ai_copilot": False,
 }
 
+MANUAL_PLAN_CODES = ("free", "personal", "pro", "enterprise")
+MANUAL_ENTITLEMENT_KEYS = (
+    "portfolio",
+    "fcn_monitoring",
+    "risk_engine",
+    "ai_copilot",
+)
+
 
 @dataclass(frozen=True)
 class MembershipSnapshot:
@@ -137,6 +145,76 @@ class MembershipService:
                     updated_at=now,
                 )
             )
+
+        self.db.commit()
+        return self.snapshot(account_id)
+
+    def apply_manual_entitlements(
+        self,
+        *,
+        account_id: str,
+        entitlements: dict[str, bool],
+        plan_code: str,
+    ) -> MembershipSnapshot:
+        """Apply an internal manual plan / entitlement override for testing.
+
+        This is intentionally separate from billing. It exists only so IXAI can
+        verify the App membership and feature-gate surfaces before Stripe or
+        production entitlement automation exists.
+        """
+        plan_code = str(plan_code or "").strip().lower()
+
+        if plan_code not in MANUAL_PLAN_CODES:
+            raise ValueError("invalid_plan_code")
+
+        unknown_keys = sorted(set(entitlements) - set(MANUAL_ENTITLEMENT_KEYS))
+        if unknown_keys:
+            raise ValueError("invalid_entitlement_key")
+
+        self.ensure_default_membership(account_id)
+        now = datetime.utcnow()
+        subscription = self.get_account_membership(account_id)
+
+        if not subscription:
+            subscription = Subscription(
+                account_id=account_id,
+                plan_code=plan_code,
+                status="active",
+                provider="manual",
+                created_at=now,
+                updated_at=now,
+            )
+            self.db.add(subscription)
+        else:
+            subscription.plan_code = plan_code
+            subscription.status = "active"
+            subscription.provider = "manual"
+            subscription.updated_at = now
+
+        existing = {
+            entitlement.key: entitlement
+            for entitlement in self.db.query(Entitlement)
+            .filter(Entitlement.account_id == str(account_id))
+            .all()
+        }
+
+        for key, enabled in entitlements.items():
+            row = existing.get(key)
+            if row:
+                row.enabled = bool(enabled)
+                row.source = "admin"
+                row.updated_at = now
+            else:
+                self.db.add(
+                    Entitlement(
+                        account_id=account_id,
+                        key=key,
+                        enabled=bool(enabled),
+                        source="admin",
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
 
         self.db.commit()
         return self.snapshot(account_id)

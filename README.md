@@ -364,3 +364,39 @@ Blocked:
 
 - No authenticated Supabase App browser session was available locally or in
   production, so the `/account` button-click flow could not be completed.
+
+## v1.57.0 Pro Connection Completion
+
+Backend addition:
+
+```text
+POST /api/v1/admin/entitlements/manual
+```
+
+Purpose:
+
+- Provide an internal-only manual entitlement test mechanism before Stripe.
+- Let IXAI verify that App membership / entitlement state can unlock Pro module
+  entrances without connecting real Portfolio, FCN, broker, or payment data.
+
+Security:
+
+- Requires `IXAI_ADMIN_INTERNAL_TOKEN`.
+- Requests must include `X-IXAI-ADMIN-TOKEN`.
+- If the environment variable is missing, the endpoint is disabled and returns
+  `403`.
+- The endpoint must not be exposed as a public billing or user-facing upgrade
+  flow.
+
+Supported manual fields:
+
+- `plan_code`: `free`, `personal`, `pro`, or `enterprise`.
+- Entitlement keys: `portfolio`, `fcn_monitoring`, `risk_engine`, and
+  `ai_copilot`.
+
+Important boundaries:
+
+- Manual entitlement is an admin testing layer only.
+- It does not create Stripe subscriptions.
+- It does not open real Portfolio / FCN data.
+- It does not provide investment advice, trading signals, or broker access.

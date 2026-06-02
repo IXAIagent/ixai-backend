@@ -241,6 +241,39 @@ GET /api/pro/membership
 This route requires a valid Supabase Bearer token from the IXAI App browser
 session and must not unlock Portfolio / FCN unless backend entitlements allow it.
 
+## v1.57 Manual Entitlement Testing
+
+The backend includes an internal-only manual entitlement endpoint for controlled
+QA before Stripe:
+
+```text
+POST /api/v1/admin/entitlements/manual
+```
+
+Required production environment variable:
+
+```text
+IXAI_ADMIN_INTERNAL_TOKEN=<strong internal token>
+```
+
+Requests must include:
+
+```text
+X-IXAI-ADMIN-TOKEN: <same internal token>
+```
+
+If `IXAI_ADMIN_INTERNAL_TOKEN` is not set, the endpoint is disabled and returns
+`403`.
+
+This endpoint is for internal testing only:
+
+- It may set `plan_code` to `free`, `personal`, `pro`, or `enterprise`.
+- It may enable / disable `portfolio`, `fcn_monitoring`, `risk_engine`, and
+  `ai_copilot`.
+- It does not create Stripe subscriptions.
+- It does not open real Portfolio / FCN data.
+- It must not be used as a public upgrade or payment flow.
+
 ## Security Notes
 
 - Do not commit secrets.
