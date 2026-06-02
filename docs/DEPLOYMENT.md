@@ -94,6 +94,46 @@ python3 -m alembic upgrade head
 Do not reintroduce the v1.54.5 unauthenticated migration bootstrap endpoint for
 this or future migrations.
 
+## v1.55.1 Production Migration Finalize
+
+v1.55.1 verifies that production PostgreSQL has moved from
+`0009_supabase_account_link` to `0010_membership_foundation`.
+
+Temporary verification endpoint:
+
+```text
+GET /admin/migration-status
+```
+
+This endpoint is read-only. It reports:
+
+- current Alembic revision
+- expected revision
+- Alembic heads
+- presence of `users`, `accounts`, `account_memberships`,
+  `subscriptions`, and `entitlements`
+
+It must not execute migrations and must not expose secrets or database URLs.
+It is temporary internal debug only and should be removed after production
+migration verification is complete or replaced with protected ops tooling.
+
+Expected successful production result:
+
+```json
+{
+  "ok": true,
+  "currentRevision": "0010_membership_foundation",
+  "expectedRevision": "0010_membership_foundation",
+  "tables": {
+    "accounts": true,
+    "account_memberships": true,
+    "users": true,
+    "subscriptions": true,
+    "entitlements": true
+  }
+}
+```
+
 ## Health Checks
 
 Use:

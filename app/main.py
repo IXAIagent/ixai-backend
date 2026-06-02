@@ -1,10 +1,15 @@
 import logging
 import os
+from datetime import datetime
+
+from alembic.config import Config
+from alembic.runtime.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from fastapi import Request
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
 
 try:
@@ -120,6 +125,57 @@ def readyz():
                 "status": "not_ready",
                 "database": "error",
                 "app": settings.PROJECT_NAME,
+            },
+        )
+
+
+# TEMPORARY v1.55.1 read-only production migration debug endpoint.
+# This endpoint intentionally does not execute migrations. Remove after
+# production 0010 verification is complete or replace with protected ops tooling.
+@app.get("/admin/migration-status")
+def migration_status():
+    expected_revision = "0010_membership_foundation"
+
+    try:
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            current_revision = context.get_current_revision()
+            inspector = inspect(connection)
+            tables = set(inspector.get_table_names())
+
+        script = ScriptDirectory.from_config(Config("alembic.ini"))
+        heads = script.get_heads()
+        required_tables = {
+            "accounts": "accounts" in tables,
+            "account_memberships": "account_memberships" in tables,
+            "users": "users" in tables,
+            "subscriptions": "subscriptions" in tables,
+            "entitlements": "entitlements" in tables,
+        }
+
+        return {
+            "ok": current_revision == expected_revision and all(required_tables.values()),
+            "currentRevision": current_revision,
+            "expectedRevision": expected_revision,
+            "heads": heads,
+            "tables": required_tables,
+            "temporary": True,
+            "source": "ixai-backend",
+            "checkedAt": datetime.utcnow().isoformat() + "Z",
+        }
+    except Exception:
+        logger.exception("migration status check failed")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "ok": False,
+                "currentRevision": None,
+                "expectedRevision": expected_revision,
+                "tables": {},
+                "temporary": True,
+                "source": "ixai-backend",
+                "checkedAt": datetime.utcnow().isoformat() + "Z",
+                "error": "migration_status_unavailable",
             },
         )
 

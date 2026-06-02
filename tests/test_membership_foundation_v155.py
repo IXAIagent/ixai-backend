@@ -108,3 +108,9 @@ def test_membership_route_registered():
     from app.main import app
 
     assert "/api/v1/membership/me" in [route.path for route in app.routes]
+
+
+def test_temporary_migration_status_route_registered():
+    from app.main import app
+
+    assert "/admin/migration-status" in [route.path for route in app.routes]
