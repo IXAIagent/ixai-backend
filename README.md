@@ -167,6 +167,35 @@ python3 -m alembic upgrade head
 The v1.54.5 unauthenticated migration bootstrap endpoint was removed and must
 not be reintroduced for v1.55 migrations.
 
+## v1.55.3 Temporary Migration Endpoints Removed
+
+v1.55.2 successfully migrated production PostgreSQL to:
+
+```text
+0010_membership_foundation
+```
+
+Verified production state:
+
+- `subscriptions` table exists.
+- `entitlements` table exists.
+- `/account` shows Backend Connected.
+- `/account` shows Account Link Linked.
+- `/account` shows Membership Free.
+- Daily Brief, Weekly Brief, and Watchlist entitlements are enabled.
+- Portfolio, FCN Monitoring, and Risk Engine remain locked.
+
+v1.55.3 removes the temporary migration/debug endpoints:
+
+```text
+GET /admin/migration-status
+POST /admin/run-membership-migration
+```
+
+Future migration operations should use protected CI/CD, paid Render Shell /
+Jobs, Railway one-off commands, or a formal admin-only internal migration
+mechanism with strong authentication.
+
 ## v1.53 Supabase Account Link Endpoint
 
 The backend now exposes the minimum server-side account-link endpoint expected by

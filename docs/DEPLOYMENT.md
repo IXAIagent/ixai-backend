@@ -61,176 +61,31 @@ Do not deploy production IXAI Pro / account-link workflows on SQLite.
 
 Current production state:
 
-- Production PostgreSQL was migrated to `0009_supabase_account_link (head)`.
-- The v1.54.5 temporary unauthenticated migration endpoint was used once for
-  Render Free bootstrap.
-- That endpoint was removed in v1.54.6 and must not be reintroduced as a
-  long-lived production route.
+- Production PostgreSQL is migrated to `0010_membership_foundation`.
+- `subscriptions` and `entitlements` tables exist.
+- `/account` verified Backend Connected, Account Link Linked, Membership Free,
+  Daily Brief / Weekly Brief / Watchlist enabled, and Portfolio / FCN / Risk
+  Engine locked.
+- The v1.54.5 unauthenticated migration bootstrap endpoint was removed in
+  v1.54.6.
+- The v1.55.1 read-only migration status endpoint and v1.55.2 protected
+  migration executor were removed in v1.55.3.
+
+Temporary endpoints that must not exist in production after v1.55.3:
+
+```text
+GET /admin/migration-status
+POST /admin/run-membership-migration
+```
 
 Future migrations should use a protected operational path:
 
 - CI/CD migration step
 - paid Render Shell / Jobs
 - Railway one-off command
-- admin-only internal migration mechanism with strong authentication
+- formal admin-only internal migration mechanism with strong authentication
 
-v1.55 adds the membership foundation migration:
-
-```text
-0010_membership_foundation
-```
-
-It creates:
-
-- `subscriptions`
-- `entitlements`
-
-Apply through the protected migration path only:
-
-```bash
-python3 -m alembic upgrade head
-```
-
-Do not reintroduce the v1.54.5 unauthenticated migration bootstrap endpoint for
-this or future migrations.
-
-## v1.55.1 Production Migration Finalize
-
-v1.55.1 verifies that production PostgreSQL has moved from
-`0009_supabase_account_link` to `0010_membership_foundation`.
-
-Temporary verification endpoint:
-
-```text
-GET /admin/migration-status
-```
-
-This endpoint is read-only. It reports:
-
-- current Alembic revision
-- expected revision
-- Alembic heads
-- presence of `users`, `accounts`, `account_memberships`,
-  `subscriptions`, and `entitlements`
-
-It must not execute migrations and must not expose secrets or database URLs.
-It is temporary internal debug only and should be removed after production
-migration verification is complete or replaced with protected ops tooling.
-
-Expected successful production result:
-
-```json
-{
-  "ok": true,
-  "currentRevision": "0010_membership_foundation",
-  "expectedRevision": "0010_membership_foundation",
-  "tables": {
-    "accounts": true,
-    "account_memberships": true,
-    "users": true,
-    "subscriptions": true,
-    "entitlements": true
-  }
-}
-```
-
-## v1.55.2 Production Migration Execution
-
-Production status before v1.55.2 execution was observed as either `0009` during
-manual inspection or `0008` during follow-up verification. The Alembic chain is
-linear:
-
-```text
-0008_fcn_coupon_sched
-→ 0009_supabase_account_link
-→ 0010_membership_foundation
-```
-
-Observed production state:
-
-```text
-currentRevision = 0008_fcn_coupon_sched or 0009_supabase_account_link
-expectedRevision = 0010_membership_foundation
-subscriptions = false
-entitlements = false
-```
-
-Because Render Free may not provide Shell / One-Off Jobs, v1.55.2 adds a
-temporary protected migration executor:
-
-```text
-POST /admin/run-membership-migration
-```
-
-Security model:
-
-- Requires `MIGRATION_BOOTSTRAP_TOKEN` to be set in the backend environment.
-- Requires request header `X-IXAI-MIGRATION-TOKEN`.
-- Returns `403` if the token env var is missing.
-- Returns `403` if the caller token does not match.
-- Runs only `alembic upgrade head`.
-- Refuses execution unless the current revision is `0008_fcn_coupon_sched`,
-  `0009_supabase_account_link`, or the database is already migrated.
-- Does not expose database URLs, secrets, or token values.
-
-Render execution sequence:
-
-1. Deploy backend containing v1.55.2.
-2. In Render environment variables, temporarily set:
-
-```text
-MIGRATION_BOOTSTRAP_TOKEN=<strong one-time token>
-```
-
-3. Verify status:
-
-```bash
-curl https://ixai-backend.onrender.com/admin/migration-status
-```
-
-4. Execute migration:
-
-```bash
-curl -X POST https://ixai-backend.onrender.com/admin/run-membership-migration \
-  -H "X-IXAI-MIGRATION-TOKEN: <strong one-time token>"
-```
-
-5. Verify status again:
-
-```bash
-curl https://ixai-backend.onrender.com/admin/migration-status
-```
-
-Expected final result:
-
-```text
-currentRevision = 0010_membership_foundation
-subscriptions = true
-entitlements = true
-```
-
-6. Verify account-link and membership:
-
-```bash
-curl -X POST https://ixai-backend.onrender.com/api/v1/integrations/supabase/account-link \
-  -H "content-type: application/json" \
-  -d '{"provider":"supabase","external_user_id":"<test-id>","email":"<masked-test-email>","name":"Migration Check"}'
-
-curl "https://ixai-backend.onrender.com/api/v1/membership/me?provider=supabase&external_user_id=<test-id>"
-```
-
-7. Remove `MIGRATION_BOOTSTRAP_TOKEN` from Render.
-8. Deploy cleanup code that removes both temporary admin migration endpoints.
-
-Risk assessment:
-
-- The endpoint is temporary and should never remain in production long-term.
-- Token must be strong, one-time, and removed immediately after migration.
-- If migration returns a non-0010 status, stop and inspect Render logs before
-  retrying.
-- Do not use this endpoint for future routine migrations; prefer protected
-  CI/CD, Render paid Shell / Jobs, Railway one-off commands, or internal ops
-  tooling with strong authentication.
+Do not reintroduce unauthenticated or long-lived migration execution endpoints.
 
 ## Health Checks
 
