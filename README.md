@@ -47,3 +47,27 @@ Production security TODO:
 - Accept requests only from the IXAI App Next server through a shared internal
   token, signed request, mTLS, or equivalent control.
 - Do not expose this endpoint as a browser-direct public API.
+
+## v1.53.1 Account Link E2E Verification
+
+Local backend verification used a temporary SQLite database:
+
+```text
+/tmp/ixai_v1531_e2e.db
+```
+
+Results:
+
+- `GET /health` returned `{"status":"ok"}`.
+- `GET /readyz` returned `{"status":"ready","database":"ok"}`.
+- First `POST /api/v1/integrations/supabase/account-link` with the test
+  Supabase payload returned `created: true`.
+- Repeating the same payload returned `created: false`.
+- The backend created / found `User`, `Account`, and owner `AccountMembership`.
+- `pro_access_status` remained `connected`, not `active`.
+
+Local DB note:
+
+- The existing local `ixai.db` was backed up and then restored because its
+  Alembic marker was behind existing tables.
+- No destructive local data migration was kept.
