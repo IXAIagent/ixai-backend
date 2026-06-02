@@ -32,6 +32,10 @@ class Account(Base):
     name = Column(String, nullable=False)
     owner_user_id = Column(String, ForeignKey("users.id"), index=True, nullable=False)
     account_type = Column(String, default="individual", nullable=False)
+    external_provider = Column(String, nullable=True)
+    external_user_id = Column(String, nullable=True)
+    external_email = Column(String, nullable=True)
+    pro_access_status = Column(String, default="connected", nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
