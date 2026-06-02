@@ -74,6 +74,26 @@ Future migrations should use a protected operational path:
 - Railway one-off command
 - admin-only internal migration mechanism with strong authentication
 
+v1.55 adds the membership foundation migration:
+
+```text
+0010_membership_foundation
+```
+
+It creates:
+
+- `subscriptions`
+- `entitlements`
+
+Apply through the protected migration path only:
+
+```bash
+python3 -m alembic upgrade head
+```
+
+Do not reintroduce the v1.54.5 unauthenticated migration bootstrap endpoint for
+this or future migrations.
+
 ## Health Checks
 
 Use:
@@ -187,10 +207,22 @@ Expected:
 }
 ```
 
+After v1.55 membership migration is applied, the frontend can also verify the
+sanitized membership proxy:
+
+```text
+GET /api/pro/membership
+```
+
+This route requires a valid Supabase Bearer token from the IXAI App browser
+session and must not unlock Portfolio / FCN unless backend entitlements allow it.
+
 ## Security Notes
 
 - Do not commit secrets.
 - Do not expose backend protected routes directly to browsers.
 - Keep account linking separate from paid Pro entitlement.
+- Keep membership lookup behind the IXAI App Next API proxy.
+- Linked account defaults to Free; paid Pro requires future entitlement or billing.
 - Add trusted server-to-server authentication before exposing sensitive
   integration endpoints beyond the current controlled foundation.

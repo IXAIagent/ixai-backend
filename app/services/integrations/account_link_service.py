@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_password_hash
 from app.models.models import Account, AccountMembership, User
+from app.services.membership_service import MembershipService
 
 
 DEFAULT_PRO_ACCESS_STATUS = "connected"
@@ -73,6 +74,7 @@ class SupabaseAccountLinkService:
         )
 
         if existing:
+            MembershipService(self.db).ensure_default_membership(str(existing.id))
             return AccountLinkResult(
                 backend_account_id=str(existing.id),
                 backend_user_id=str(existing.owner_user_id),
@@ -104,6 +106,7 @@ class SupabaseAccountLinkService:
         self.db.add(AccountMembership(account_id=account.id, user_id=user.id, role="owner"))
         self.db.commit()
         self.db.refresh(account)
+        MembershipService(self.db).ensure_default_membership(str(account.id))
 
         return AccountLinkResult(
             backend_account_id=str(account.id),

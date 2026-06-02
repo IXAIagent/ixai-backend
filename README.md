@@ -85,6 +85,88 @@ Future migration operations should use one of:
 - admin-only internal migration mechanism with strong authentication
 - Railway / Render deployment workflow that supports one-off commands
 
+## v1.55.0 Membership Foundation
+
+The backend now includes the first membership / entitlement foundation for IXAI
+App ↔ IXAI Pro access control.
+
+New backend tables:
+
+- `subscriptions`
+- `entitlements`
+
+Linked Supabase accounts default to:
+
+```text
+plan_code = free
+status = active
+provider = manual
+```
+
+Default Free entitlements:
+
+```text
+daily_brief = true
+weekly_brief = true
+watchlist = true
+pro_preview = false
+portfolio = false
+fcn_monitoring = false
+risk_engine = false
+ai_copilot = false
+```
+
+New endpoint:
+
+```text
+GET /api/v1/membership/me
+```
+
+Supported lookup parameters:
+
+```text
+provider=supabase
+external_user_id=<supabase_user_id>
+```
+
+Response:
+
+```json
+{
+  "account_id": "...",
+  "plan_code": "free",
+  "status": "active",
+  "entitlements": {
+    "daily_brief": true,
+    "weekly_brief": true,
+    "watchlist": true,
+    "pro_preview": false,
+    "portfolio": false,
+    "fcn_monitoring": false,
+    "risk_engine": false,
+    "ai_copilot": false
+  }
+}
+```
+
+Important boundaries:
+
+- Linked account does not activate paid Pro access.
+- Portfolio and FCN remain disabled by default.
+- Stripe / paid entitlement is future work.
+- This endpoint is intended for the IXAI App Next API proxy.
+- Add trusted server-to-server authentication before exposing sensitive
+  membership or account data.
+
+Production migration:
+
+```bash
+python3 -m alembic upgrade head
+```
+
+The v1.54.5 unauthenticated migration bootstrap endpoint was removed and must
+not be reintroduced for v1.55 migrations.
+
 ## v1.53 Supabase Account Link Endpoint
 
 The backend now exposes the minimum server-side account-link endpoint expected by

@@ -42,6 +42,8 @@ class Account(Base):
     owner_user = relationship("User", back_populates="owned_accounts")
     memberships = relationship("AccountMembership", back_populates="account", cascade="all, delete-orphan")
     portfolios = relationship("Portfolio", back_populates="account")
+    subscriptions = relationship("Subscription", back_populates="account", cascade="all, delete-orphan")
+    entitlements = relationship("Entitlement", back_populates="account", cascade="all, delete-orphan")
 
 
 class AccountMembership(Base):
@@ -55,6 +57,39 @@ class AccountMembership(Base):
 
     account = relationship("Account", back_populates="memberships")
     user = relationship("User", back_populates="account_memberships")
+
+
+class Subscription(Base):
+    __tablename__ = "subscriptions"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    account_id = Column(String, ForeignKey("accounts.id"), index=True, nullable=False)
+    plan_code = Column(String, default="free", index=True, nullable=False)
+    status = Column(String, default="active", index=True, nullable=False)
+    provider = Column(String, default="manual", nullable=False)
+    provider_customer_id = Column(String, nullable=True)
+    provider_subscription_id = Column(String, nullable=True)
+    current_period_start = Column(DateTime, nullable=True)
+    current_period_end = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    account = relationship("Account", back_populates="subscriptions")
+
+
+class Entitlement(Base):
+    __tablename__ = "entitlements"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    account_id = Column(String, ForeignKey("accounts.id"), index=True, nullable=False)
+    key = Column(String, index=True, nullable=False)
+    enabled = Column(Boolean, default=False, nullable=False)
+    source = Column(String, default="plan", nullable=False)
+    expires_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    account = relationship("Account", back_populates="entitlements")
 
 
 class Portfolio(Base):
