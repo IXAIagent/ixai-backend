@@ -64,6 +64,27 @@ Then redeploy `app/ixai-web-app` and verify:
 GET /api/backend/health
 ```
 
+## v1.54.6 Migration Bootstrap Endpoint Removed
+
+v1.54.5 temporarily added `POST /admin/run-migrations` because the Render Free
+plan did not provide Shell / One-Off Jobs for running `alembic upgrade head`.
+
+Production result:
+
+- The temporary endpoint was used successfully.
+- Production PostgreSQL is migrated to `0009_supabase_account_link (head)`.
+- `/account` confirmed backend connectivity and linked account status.
+
+v1.54.6 removed the unauthenticated temporary endpoint. It must not remain
+exposed in production.
+
+Future migration operations should use one of:
+
+- protected CI/CD migration step
+- paid Render Shell / Jobs
+- admin-only internal migration mechanism with strong authentication
+- Railway / Render deployment workflow that supports one-off commands
+
 ## v1.53 Supabase Account Link Endpoint
 
 The backend now exposes the minimum server-side account-link endpoint expected by

@@ -57,6 +57,23 @@ python3 -m alembic upgrade head
 SQLite is acceptable for local development and isolated E2E verification only.
 Do not deploy production IXAI Pro / account-link workflows on SQLite.
 
+## Migration Operations
+
+Current production state:
+
+- Production PostgreSQL was migrated to `0009_supabase_account_link (head)`.
+- The v1.54.5 temporary unauthenticated migration endpoint was used once for
+  Render Free bootstrap.
+- That endpoint was removed in v1.54.6 and must not be reintroduced as a
+  long-lived production route.
+
+Future migrations should use a protected operational path:
+
+- CI/CD migration step
+- paid Render Shell / Jobs
+- Railway one-off command
+- admin-only internal migration mechanism with strong authentication
+
 ## Health Checks
 
 Use:

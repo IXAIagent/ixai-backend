@@ -1,7 +1,5 @@
 import logging
 import os
-import subprocess
-import sys
 from fastapi import Request
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -124,68 +122,6 @@ def readyz():
                 "app": settings.PROJECT_NAME,
             },
         )
-
-
-@app.post("/admin/run-migrations")
-def run_migrations():
-    """TEMPORARY v1.54.5 bootstrap endpoint for Render Free migration execution."""
-    logger.warning("TEMPORARY migration bootstrap endpoint invoked")
-
-    try:
-        upgrade = subprocess.run(
-            [sys.executable, "-m", "alembic", "upgrade", "head"],
-            capture_output=True,
-            check=False,
-            text=True,
-            timeout=90,
-        )
-        current = subprocess.run(
-            [sys.executable, "-m", "alembic", "current"],
-            capture_output=True,
-            check=False,
-            text=True,
-            timeout=30,
-        )
-    except Exception as exc:
-        logger.exception("TEMPORARY migration bootstrap execution failed")
-        return JSONResponse(
-            status_code=500,
-            content={
-                "ok": False,
-                "status": "failed",
-                "temporary": True,
-                "message": str(exc),
-            },
-        )
-
-    ok = upgrade.returncode == 0 and current.returncode == 0
-    logger.warning(
-        "TEMPORARY migration bootstrap completed",
-        extra={
-            "alembic_current_returncode": current.returncode,
-            "alembic_upgrade_returncode": upgrade.returncode,
-            "ok": ok,
-        },
-    )
-
-    return JSONResponse(
-        status_code=200 if ok else 500,
-        content={
-            "ok": ok,
-            "status": "success" if ok else "failed",
-            "temporary": True,
-            "upgrade": {
-                "returncode": upgrade.returncode,
-                "stderr": upgrade.stderr[-2000:],
-                "stdout": upgrade.stdout[-2000:],
-            },
-            "current": {
-                "returncode": current.returncode,
-                "revision": current.stdout.strip(),
-                "stderr": current.stderr[-2000:],
-            },
-        },
-    )
 
 
 @app.on_event("startup")
